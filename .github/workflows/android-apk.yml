@@ -12,7 +12,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - name: Installer Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
