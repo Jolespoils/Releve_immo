@@ -95,6 +95,14 @@ class MainActivity : Activity() {
         prefs.edit().putString(name, Base64.encodeToString(data, Base64.NO_WRAP)).apply()
         return true
     }
+    private fun loadProviderKey(provider: String): String {
+        val name = providerSlot(provider, 1) ?: return ""
+        val encoded = prefs.getString(name, null) ?: return ""
+        val data = Base64.decode(encoded, Base64.DEFAULT)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, cipherKey(), GCMParameterSpec(128, data.copyOfRange(0, 12)))
+        return String(cipher.doFinal(data.copyOfRange(12, data.size)), Charsets.UTF_8)
+    }
     private fun hasProviderKey(provider: String, slot: Int): Boolean {
         val name = providerSlot(provider, slot) ?: return false
         val encoded = prefs.getString(name, null) ?: return false
@@ -106,7 +114,241 @@ class MainActivity : Activity() {
     private fun callback(name: String, vararg args: String) {
         runOnUiThread { web.evaluateJavascript("window.$name && window.$name(${args.joinToString(",")});", null) }
     }
+    private fun analyzeExternal(transcript: String, requestId: Int, previousError: String) {
+        if (geminiRequestId.get() != requestId) return
+        val prompt = """Tu analyses une transcription de visite immobilière en français. Extrais les pièces dans l'ordre de visite, leurs niveaux et les éventuelles justifications de non-visite et moyens à mettre en œuvre. Un escalier mentionné est une pièce à part entière nommée Escalier : ne l'oublie jamais, même lorsqu'il sert seulement à monter à l'étage. CONSERVE EXACTEMENT les noms particuliers donnés par l'utilisateur, notamment Chambre enfant, Chambre parentale, Chambre d'amis, Salle de jeu, Loveroom, Bureau principal, et tout nom inhabituel. Ne transforme jamais Loveroom en Chambre. Ne numérote que les pièces génériques répétées (Chambre 1, Chambre 2, etc.), jamais les noms particuliers. Ne fusionne jamais plusieurs pièces portant un même nom générique. Préserve leur ordre. Interprète le discours entier, les changements de niveau (monter, descendre, revenir au rez-de-chaussée), et les quantités (trois chambres = trois entrées). Le niveau persiste jusqu'au prochain changement explicite. Ne crée aucune pièce non mentionnée. Si un détail est incertain, laisse le champ vide ou utilise le niveau le plus plausible selon le contexte. Réponds UNIQUEMENT en JSON : {"pieces":[{"name":"Salon","floor":"Rez de chaussée","justification":"","means":""}]}. Niveaux autorisés : Sous-sol, Rez de chaussée, Entresol, 1er étage, 2e étage, 3e étage, 4e étage, 5e étage, Combles, Grenier, Toiture, Extérieur. Les champs justification et means sont vides pour une pièce visitée."""
+        val message = prompt + "\n\nTRANSCRIPTION À ANALYSER :\n" + transcript
+        val failures = mutableListOf(previousError.take(180))
+        val started = android.os.SystemClock.elapsedRealtime()
+        for (provider in listOf("groq", "openrouter")) {
+            if (geminiRequestId.get() != requestId) return
+            val key = try { loadProviderKey(provider) } catch (_: Exception) { "" }
+            if (key.isBlank()) continue
+            val base = if (provider == "groq") "https://api.groq.com/openai/v1" else "https://openrouter.ai/api/v1"
+            fun fetchModels(): List<String> {
+                val c = URL("$base/models").openConnection() as HttpURLConnection
+                try {
+                    c.setRequestProperty("Authorization", "Bearer $key")
+                    c.connectTimeout = 7000; c.readTimeout = 10000
+                    if (c.responseCode !in 200..299) throw IllegalStateException("Liste modèles HTTP ${c.responseCode}")
+                    val arr = JSONObject(c.inputStream.bufferedReader().use { it.readText() }).optJSONArray("data") ?: JSONArray()
+                    val found = mutableListOf<String>()
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.optJSONObject(i) ?: continue
+                        val id = obj.optString("id")
+                        if (id.isBlank()) continue
+                        if (provider == "openrouter") {
+                            if (!id.endsWith(":free")) continue
+                        } else {
+                            if (!id.contains("llama",true) && !id.contains("qwen",true) && !id.contains("gpt-oss",true) && !id.contains("gemma",true)) continue
+                            if (listOf("guard","safeguard","vision","whisper","audio","tts","transcribe","moderation").any { id.contains(it,true) }) continue
+                        }
+                        found.add(id)
+                    }
+                    return found.sortedWith(compareByDescending<String> { it.contains("70b") || it.contains("120b") || it.contains("large") }.thenBy { it }).take(12)
+                } finally { c.disconnect() }
+            }
+            val models = try { fetchModels() } catch (e: Exception) {
+                failures.add("$provider : ${e.message}"); continue
+            }
+            for (model in models) {
+                if (geminiRequestId.get() != requestId) return
+                if (android.os.SystemClock.elapsedRealtime() - started > 90000L) break
+                callback("releveGeminiProgress", JSONObject.quote("trying"), JSONObject.quote("$provider / $model"), JSONObject.quote("Analyse en cours"))
+                var c: HttpURLConnection? = null
+                try {
+                    val payload = JSONObject().put("model",model).put("temperature",0.1)
+                        .put("messages",JSONArray().put(JSONObject().put("role","user").put("content",message)))
+                    if (provider == "groq") payload.put("response_format",JSONObject().put("type","json_object"))
+                    c = URL("$base/chat/completions").openConnection() as HttpURLConnection
+                    geminiActiveConnection = c
+                    c.requestMethod="POST";c.doOutput=true
+                    c.setRequestProperty("Authorization","Bearer $key")
+                    c.setRequestProperty("Content-Type","application/json; charset=UTF-8")
+                    c.connectTimeout=7000;c.readTimeout=12000
+                    c.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                    if (c.responseCode !in 200..299) {
+                        failures.add("$provider / $model : HTTP ${c.responseCode}");continue
+                    }
+                    val response=JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+                    var answer=response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
+                    if (answer.startsWith("```")) answer=answer.replace(Regex("^```(?:json)?\\s*|\\s*```$"), "").trim()
+                    val obj=JSONObject(answer)
+                    val pieces=obj.optJSONArray("pieces") ?: continue
+                    if (pieces.length() !in 1..200 || (0 until pieces.length()).any { pieces.optJSONObject(it)?.optString("name").isNullOrBlank() }) continue
+                    if (geminiRequestId.get() != requestId) return
+                    callback("releveGeminiProgress",JSONObject.quote("success"),JSONObject.quote("$provider / $model"),JSONObject.quote("Analyse réussie"))
+                    callback("releveGeminiResult",JSONObject.quote(obj.toString()))
+                    return
+                } catch (e: Exception) {
+                    failures.add("$provider / $model : ${e.message?.take(65)}")
+                } finally { c?.disconnect();geminiActiveConnection=null }
+            }
+        }
+        if (geminiRequestId.get() == requestId) callback("releveGeminiError",JSONObject.quote(failures.joinToString(" ; ").take(350)))
+    }
+
+    // Étape 2 : IA commune à toutes les étapes, avec clés conservées dans Android Keystore.
+    private fun analyzeStep2Native(transcript: String, roomsJson: String) {
+        if (transcript.isBlank() || transcript.length > 50000) {
+            callback("releveStep2Error", JSONObject.quote("Dictée vide ou trop longue"))
+            return
+        }
+        val requestId = geminiRequestId.incrementAndGet()
+        Thread {
+            val errors = mutableListOf<String>()
+            fun current() = geminiRequestId.get() == requestId
+            fun progress(message: String) { if (current()) callback("releveStep2Progress", JSONObject.quote(message)) }
+            val roomArray = try { JSONArray(roomsJson) } catch (_: Exception) { JSONArray() }
+            val prompt = """Tu es un diagnostiqueur immobilier et tu convertis une dictée française imparfaitement transcrite en composants Liciel.
+Chaque élément physique est UNE ligne distincte, même si plusieurs partagent les mêmes matériaux.
+Exemple : « murs A B C D en plâtre peinture » = 4 entrées Mur - A, Mur - B, Mur - C, Mur - D.
+« l'embrasure de la fenêtre I en plâtre peinture, l'allège de la fenêtre I en plâtre peinture, la fenêtre un en PVC » = 3 entrées DISTINCTES :
+Embrasure fenêtre - I / Substrat : Plâtre - Revêtement : Peinture ;
+Allège fenêtre - I / Substrat : Plâtre - Revêtement : Peinture ;
+Fenêtre 1 - I / Substrat : PVC.
+Distingue fenêtres, volets, embrasures, allèges, portes, grilles, murs, sols, plafonds, plinthes, poutres.
+Corrige les erreurs évidentes de reconnaissance vocale (plaintes -> plinthes, plate -> plâtre, alege -> allège) sans inventer.
+Associe chaque composant à la pièce réellement mentionnée parmi la liste fournie. Conserve le niveau de la pièce.
+Pour chaque ligne, Type doit être un libellé comme « Mur - A », « Fenêtre 1 - I », « Plafond » ; Informations contient « Substrat : ... - Revêtement : ... » selon les éléments réellement dictés.
+Respecte les indications d'époque >1949, après 1949, 1940 telles qu'elles sont dictées, sans transformer 1940 en 1949.
+Si un composant est ambigu, ajoute un avertissement et ne lui invente pas de matériaux.
+N'invente JAMAIS de mesures plomb ni de dégradations CREP. Ne fusionne pas les composants.
+Réponds UNIQUEMENT avec un objet JSON : {"components":[{"room":"Salon cuisine","type":"Mur - A","info":"Substrat : Plâtre - Revêtement : Peinture"}],"warnings":[]}.
+La propriété room doit correspondre au nom d'une pièce fournie. Ne renvoie aucun XML.
+PIÈCES DE L'ÉTAPE 1 : """ + roomArray.toString() + "\nDICTÉE :\n" + transcript
+            fun valid(raw: String): JSONObject? {
+                val cleaned = raw.trim().replace(Regex("^```(?:json)?\\s*|\\s*```$", RegexOption.IGNORE_CASE), "").trim()
+                val obj = try { JSONObject(cleaned) } catch (_: Exception) { return null }
+                val components = obj.optJSONArray("components") ?: return null
+                if (components.length() !in 1..500) return null
+                for (i in 0 until components.length()) {
+                    val row = components.optJSONObject(i) ?: return null
+                    if (row.optString("room").isBlank() || row.optString("type").isBlank()) return null
+                    // Ne pas accepter des pièces inventées : l'étape 2 dépend de l'étape 1.
+                    if (!(0 until roomArray.length()).any { j ->
+                        roomArray.optJSONObject(j)?.optString("name")?.trim()
+                            ?.equals(row.optString("room").trim(), ignoreCase = true) == true
+                    }) return null
+                }
+                return obj
+            }
+            fun post(url: String, key: String, payload: JSONObject, google: Boolean): String {
+                val c = URL(url).openConnection() as HttpURLConnection
+                geminiActiveConnection = c
+                try {
+                    c.requestMethod = "POST"; c.doOutput = true
+                    c.connectTimeout = 7000; c.readTimeout = 18000
+                    c.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                    if (google) c.setRequestProperty("x-goog-api-key", key)
+                    else c.setRequestProperty("Authorization", "Bearer $key")
+                    c.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                    val status = c.responseCode
+                    if (status !in 200..299) throw IllegalStateException("HTTP $status")
+                    val result = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+                    return if (google) {
+                        val parts = result.getJSONArray("candidates").getJSONObject(0)
+                            .getJSONObject("content").getJSONArray("parts")
+                        (0 until parts.length()).joinToString("") { parts.getJSONObject(it).optString("text") }
+                    } else result.getJSONArray("choices").getJSONObject(0)
+                        .getJSONObject("message").getString("content")
+                } finally { c.disconnect(); if (geminiActiveConnection === c) geminiActiveConnection = null }
+            }
+            try {
+                val geminiKey = try { loadApiKey() } catch (_: Exception) { "" }
+                if (geminiKey.isNotBlank()) {
+                    progress("Gemini : recherche des modèles disponibles…")
+                    val models = try {
+                        val c = URL("https://generativelanguage.googleapis.com/v1beta/models?pageSize=100").openConnection() as HttpURLConnection
+                        try {
+                            c.setRequestProperty("x-goog-api-key", geminiKey)
+                            c.connectTimeout = 7000; c.readTimeout = 10000
+                            if (c.responseCode !in 200..299) throw IllegalStateException("HTTP ${c.responseCode}")
+                            val arr = JSONObject(c.inputStream.bufferedReader().use { it.readText() }).optJSONArray("models") ?: JSONArray()
+                            val names = mutableListOf<String>()
+                            for (i in 0 until arr.length()) {
+                                val m = arr.getJSONObject(i)
+                                val name = m.optString("name").removePrefix("models/")
+                                val methods = m.optJSONArray("supportedGenerationMethods") ?: JSONArray()
+                                if (name.startsWith("gemini-") &&
+                                    (0 until methods.length()).any { methods.optString(it) == "generateContent" } &&
+                                    !listOf("audio","image","tts","live","embedding","speech","robotics").any { name.contains(it,true) })
+                                    names.add(name)
+                            }
+                            (listOf(prefs.getString("last_working_gemini_model","").orEmpty()) +
+                                names.sortedWith(compareByDescending<String> { it.contains("flash",true) }.thenByDescending { it }))
+                                .filter { it in names }.distinct().take(10)
+                        } finally { c.disconnect() }
+                    } catch (e: Exception) { errors.add("Gemini : ${e.message}"); emptyList() }
+                    for (model in models) {
+                        if (!current()) return@Thread
+                        progress("Gemini / $model : analyse…")
+                        try {
+                            val payload = JSONObject().put("contents",JSONArray().put(JSONObject()
+                                .put("role","user").put("parts",JSONArray().put(JSONObject().put("text",prompt)))))
+                                .put("generationConfig",JSONObject().put("responseMimeType","application/json").put("temperature",0.1))
+                            val result = valid(post("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent",geminiKey,payload,true))
+                            if (result != null) {
+                                if (!current()) return@Thread
+                                prefs.edit().putString("last_working_gemini_model",model).apply()
+                                callback("releveStep2Result",JSONObject.quote(result.toString()),JSONObject.quote("Gemini / $model"))
+                                return@Thread
+                            }
+                            errors.add("Gemini / $model : résultat invalide")
+                        } catch (e: Exception) { errors.add("Gemini / $model : ${e.message}") }
+                    }
+                }
+                for (provider in listOf("groq","openrouter")) {
+                    if (!current()) return@Thread
+                    val key = try { loadProviderKey(provider) } catch (_: Exception) { "" }
+                    if (key.isBlank()) continue
+                    val base = if (provider=="groq") "https://api.groq.com/openai/v1" else "https://openrouter.ai/api/v1"
+                    progress("$provider : recherche des modèles…")
+                    val models = try {
+                        val c = URL("$base/models").openConnection() as HttpURLConnection
+                        try {
+                            c.setRequestProperty("Authorization","Bearer $key")
+                            c.connectTimeout=7000;c.readTimeout=10000
+                            if (c.responseCode !in 200..299) throw IllegalStateException("HTTP ${c.responseCode}")
+                            val arr = JSONObject(c.inputStream.bufferedReader().use { it.readText() }).optJSONArray("data") ?: JSONArray()
+                            val found=mutableListOf<String>()
+                            for(i in 0 until arr.length()) {
+                                val id=arr.optJSONObject(i)?.optString("id").orEmpty()
+                                if(provider=="openrouter" && id.endsWith(":free")) found.add(id)
+                                if(provider=="groq" &&
+                                    listOf("llama","qwen","gpt-oss","gemma").any { id.contains(it,true) } &&
+                                    listOf("guard","audio","whisper","tts","vision","moderation").none { id.contains(it,true) }) found.add(id)
+                            }
+                            found.sortedWith(compareByDescending<String> { it.contains("70b")||it.contains("120b")||it.contains("large") }.thenBy { it }).take(12)
+                        } finally { c.disconnect() }
+                    } catch (e: Exception) { errors.add("$provider : ${e.message}"); emptyList() }
+                    for(model in models) {
+                        if(!current()) return@Thread
+                        progress("$provider / $model : analyse…")
+                        try {
+                            val payload=JSONObject().put("model",model).put("temperature",0.1)
+                                .put("messages",JSONArray().put(JSONObject().put("role","user").put("content",prompt)))
+                            if(provider=="groq") payload.put("response_format",JSONObject().put("type","json_object"))
+                            val result=valid(post("$base/chat/completions",key,payload,false))
+                            if(result!=null) {
+                                if(!current()) return@Thread
+                                callback("releveStep2Result",JSONObject.quote(result.toString()),JSONObject.quote("$provider / $model"))
+                                return@Thread
+                            }
+                            errors.add("$provider / $model : résultat invalide")
+                        } catch(e:Exception) { errors.add("$provider / $model : ${e.message}") }
+                    }
+                }
+                if(current()) callback("releveStep2Error",JSONObject.quote(
+                    "Aucune IA n'a fourni de résultat valide. "+errors.takeLast(5).joinToString(" ; ").take(300)))
+            } catch(e:Exception) {
+                if(current()) callback("releveStep2Error",JSONObject.quote(e.message?:"Analyse IA indisponible"))
+            }
+        }.start()
+    }
+
     inner class Bridge {
+        @JavascriptInterface fun analyzeStep2(transcript: String, roomsJson: String) = analyzeStep2Native(transcript, roomsJson)
         @JavascriptInterface fun start() {
             runOnUiThread {
                 if (listening) return@runOnUiThread
@@ -322,7 +564,7 @@ class MainActivity : Activity() {
                     prefs.edit().putString("last_working_gemini_model", chosenModel).apply()
                     callback("releveGeminiResult", JSONObject.quote(requireNotNull(parsed).toString()))
                 } catch (e: Exception) {
-                    if (current()) callback("releveGeminiError", JSONObject.quote(e.message ?: "Analyse IA indisponible"))
+                    if (current()) analyzeExternal(transcript, requestId, e.message ?: "Gemini indisponible")
                 } finally {
                     connection?.disconnect()
                     if (current()) geminiActiveConnection = null
