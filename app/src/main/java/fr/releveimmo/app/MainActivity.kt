@@ -190,10 +190,10 @@ class MainActivity : Activity() {
                             JSONObject(rawError).getJSONObject("error").optString("message")
                         } catch (_: Exception) { "" }
                         failures.add("$model: HTTP $status" +
-                            if (status == 429) " (quota)" else if (status == 404) " (introuvable)" else "")
-                        // Un 429 peut ne concerner qu'un modèle. Tester le suivant.
+                            if (status == 429) " (quota)" else if (status == 404) " (introuvable)" else if (status in listOf(500, 502, 503, 504)) " (serveur indisponible)" else "")
+                        // Les erreurs de quota, de modèle et de surcharge peuvent ne concerner qu'un modèle.
                         // Une clé invalide ou un refus d'accès ne sera pas résolu par un autre modèle.
-                        if (status != 404 && status != 429) {
+                        if (status !in listOf(404, 429, 500, 502, 503, 504)) {
                             throw IllegalStateException(
                                 "Gemini $model HTTP $status : " + detail.take(180)
                             )
