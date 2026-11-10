@@ -111,16 +111,30 @@ class MainActivity : Activity() {
                     val payload = JSONObject().put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", transcript)))))
                         .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.1))
-                    connection = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent").openConnection() as HttpURLConnection
-                    connection.requestMethod = "POST"
-                    connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                    connection.setRequestProperty("x-goog-api-key", apiKey)
-                    connection.connectTimeout = 12000
-                    connection.readTimeout = 30000
-                    connection.doOutput = true
-                    connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
-                    val status = connection.responseCode
-                    if (status !in 200..299) throw IllegalStateException("Gemini HTTP $status (quota, clé ou connexion)")
+                    // Essayer d'autres modèles si le modèle principal renvoie 404.
+                    val models = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash")
+                    var status = 0
+                    var errorDetail = ""
+                    for (model in models) {
+                        connection?.disconnect()
+                        connection = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection
+                        connection.requestMethod = "POST"
+                        connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                        connection.setRequestProperty("x-goog-api-key", apiKey)
+                        connection.connectTimeout = 12000
+                        connection.readTimeout = 30000
+                        connection.doOutput = true
+                        connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                        status = connection.responseCode
+                        if (status in 200..299) break
+                        val rawError = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        errorDetail = try { JSONObject(rawError).getJSONObject("error").optString("message") } catch (_: Exception) { "" }
+                        if (status != 404) break
+                    }
+                    if (status !in 200..299) {
+                        val detail = errorDetail.take(180).ifBlank { "Vérifie la clé et les modèles disponibles dans Google AI Studio" }
+                        throw IllegalStateException("Gemini HTTP $status : $detail")
+                    }
                     val response = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
                     val result = response.getJSONArray("candidates").getJSONObject(0).getJSONObject("content")
                         .getJSONArray("parts").getJSONObject(0).getString("text")
