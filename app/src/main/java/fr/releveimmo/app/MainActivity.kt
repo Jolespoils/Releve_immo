@@ -135,7 +135,7 @@ class MainActivity : Activity() {
                         val detail = errorDetail.take(180).ifBlank { "Vérifie la clé et les modèles disponibles dans Google AI Studio" }
                         throw IllegalStateException("Gemini HTTP $status : $detail")
                     }
-                    val response = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+                    val response = JSONObject(requireNotNull(connection).inputStream.bufferedReader().use { it.readText() })
                     val result = response.getJSONArray("candidates").getJSONObject(0).getJSONObject("content")
                         .getJSONArray("parts").getJSONObject(0).getString("text")
                     val parsed = JSONObject(result)
