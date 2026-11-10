@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relevé Immo — Étape 2</title><style>body{font-family:system-ui;background:#f3f6fa;color:#142338;margin:0;padding:20px}main{max-width:700px;margin:auto}section{background:white;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 12px #0001}button{border:0;background:#124a85;color:white;border-radius:10px;padding:12px;margin:4px;cursor:pointer}button:disabled{opacity:.45}textarea{width:100%;min-height:140px;box-sizing:border-box;padding:12px;font:inherit}input{font:inherit;padding:8px;width:100%;box-sizing:border-box}.muted{color:#667}.room{border-bottom:1px solid #ddd;padding:10px 0}.room label{display:block;margin:8px 0 3px}.delete-component{display:block;margin:8px auto 4px;background:#c62828;color:white}.delete-component:hover{background:#a91e1e}</style></head><body><main><h1>🏠 Relevé Immo</h1><p>Étape 2 — Description des composants</p><section><button id="backstep">← Étape 1</button><p id="roomstatus" class="muted"></p><h2>Dictée des composants</h2><button id="mic2">🎙️ Démarrer la dictée</button><button id="stop2" disabled>■ Arrêter</button><textarea id="speech2" placeholder="Dans le salon, les murs A B C D en plâtre peinture…"></textarea><button id="parse2">Analyser les composants dictés</button><p id="parse2status" class="muted"></p></section><section><h2>Composants à vérifier</h2><button id="addcomponent">+ Ajouter un composant</button><div id="components"></div><button id="exportstep2">Exporter Table_General_Desciption_Pieces.xml</button><button id="exporttxt2">Exporter la dictée et les composants (.txt)</button><p id="step2status" class="muted"></p></section></main><script>
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relevé Immo — Étape 2</title><style>body{font-family:system-ui;background:#f3f6fa;color:#142338;margin:0;padding:20px}main{max-width:700px;margin:auto}section{background:white;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 12px #0001}button{border:0;background:#124a85;color:white;border-radius:10px;padding:12px;margin:4px;cursor:pointer}button:disabled{opacity:.45}textarea{width:100%;min-height:140px;box-sizing:border-box;padding:12px;font:inherit}input{font:inherit;padding:8px;width:100%;box-sizing:border-box}.muted{color:#667}.room{border-bottom:1px solid #ddd;padding:10px 0}.room label{display:block;margin:8px 0 3px}.delete-component{display:block;margin:8px auto 4px;background:#c62828;color:white}.delete-component:hover{background:#a91e1e}</style></head><body><main><h1>🏠 Relevé Immo</h1><p>Étape 2 — Description des composants</p><section><button id="backstep">← Étape 1</button><p id="roomstatus" class="muted"></p><h2>Dictée des composants</h2><button id="mic2">🎙️ Démarrer la dictée</button><button id="stop2" disabled>■ Arrêter</button><textarea id="speech2" placeholder="Dans le salon, les murs A B C D en plâtre peinture…"></textarea><button id="parse2">Analyser les composants avec l’IA</button><p id="parse2status" class="muted"></p></section><section><h2>Composants à vérifier</h2><button id="addcomponent">+ Ajouter un composant</button><div id="components"></div><button id="exportstep2">Exporter Table_General_Desciption_Pieces.xml</button><button id="exporttxt2">Exporter la dictée et les composants (.txt)</button><p id="step2status" class="muted"></p></section></main><script>
 const $=id=>document.getElementById(id);
 let rooms=[],keys=[],step2Items=[];
 try{const payload=JSON.parse(decodeURIComponent(location.hash.slice(1)));if(!Array.isArray(payload.rooms)||!payload.rooms.length)throw Error('Pièces absentes');rooms=payload.rooms;keys=payload.keys||[];$('roomstatus').textContent=rooms.length+' pièces reçues depuis l’étape 1.';}catch(e){$('roomstatus').textContent='Aucune liste de pièces reçue. Retourne à l’étape 1 et utilise « Passer à l’étape 2 ».';$('parse2').disabled=true;$('exportstep2').disabled=true;}
@@ -48,7 +48,58 @@ function componentsFromDictation(raw){
   }
   return {items:out,warnings};
 }
-$('parse2').onclick=()=>{const raw=$('speech2').value.trim();if(!raw){$('parse2status').textContent='Dicte ou saisis les composants.';return}const result=componentsFromDictation(raw);if(!result.items.length){$('parse2status').textContent='Aucun composant reconnu. Vérifie la dictée.';return}step2Items.push(...result.items);step2Items.forEach((r,i)=>r.id_classement_champs=String(i).padStart(5,'0'));drawStep2();$('parse2status').textContent=result.items.length+' composants ajoutés. '+(result.warnings.length?'À vérifier : '+result.warnings.slice(0,8).join(' ; '):'Vérifie chaque ligne avant export.');};
+
+let step2Analyzing=false;
+function addParsedComponents(result, source){
+  if(!result.items.length){$('parse2status').textContent='Aucun composant reconnu. Vérifie la dictée.';return}
+  step2Items.push(...result.items);
+  step2Items.forEach((r,i)=>r.id_classement_champs=String(i).padStart(5,'0'));
+  drawStep2();
+  $('parse2status').textContent=result.items.length+' composants ajoutés ('+source+'). '+
+    (result.warnings.length?'À vérifier : '+result.warnings.slice(0,8).join(' ; '):'Vérifie chaque ligne avant export.');
+}
+function localFallback(reason){
+  step2Analyzing=false;$('parse2').disabled=false;
+  const result=componentsFromDictation($('speech2').value.trim());
+  addParsedComponents(result,'analyse locale de secours');
+  if(reason) $('parse2status').textContent+=' IA indisponible : '+reason;
+}
+window.releveStep2Progress=message=>{$('parse2status').textContent=message;};
+window.releveStep2Result=(json,provider)=>{
+  if(!step2Analyzing)return;
+  try{
+    const parsed=JSON.parse(json),components=parsed.components;
+    if(!Array.isArray(components)||!components.length)throw Error('Réponse vide');
+    const out=[],warnings=Array.isArray(parsed.warnings)?parsed.warnings.map(String):[];
+    for(const item of components){
+      if(!item||typeof item.room!=='string'||typeof item.type!=='string'||!item.type.trim())throw Error('Composant invalide');
+      const match=rooms.find(r=>norm2(r.name.trim())===norm2(item.room.trim()));
+      if(!match)throw Error('Pièce inconnue : '+item.room);
+      const r=step2Blank();
+      r.Localistion=(match.floor?match.floor+' - ':'')+match.name;
+      r.Type=item.type.trim();r.Informations=String(item.info||'').trim();
+      out.push(r);
+    }
+    step2Analyzing=false;$('parse2').disabled=false;
+    addParsedComponents({items:out,warnings},provider);
+  }catch(e){localFallback('réponse IA invalide : '+e.message);}
+};
+window.releveStep2Error=message=>{if(step2Analyzing)localFallback(message);};
+$('parse2').onclick=()=>{
+  if(step2Analyzing)return;
+  const raw=$('speech2').value.trim();
+  if(!raw){$('parse2status').textContent='Dicte ou saisis les composants.';return}
+  if(!rooms.length){$('parse2status').textContent='Importe ou valide les pièces à l’étape 1.';return}
+  if(window.AndroidAI&&typeof window.AndroidAI.analyzeStep2==='function'){
+    step2Analyzing=true;$('parse2').disabled=true;
+    $('parse2status').textContent='Recherche des IA disponibles…';
+    try{window.AndroidAI.analyzeStep2(raw,JSON.stringify(rooms));}
+    catch(e){localFallback('appel Android impossible');}
+  }else{
+    localFallback('Version Android sans module IA pour l’étape 2');
+  }
+};
+
 
 function encode1252(s){const map={'€':128,'‚':130,'ƒ':131,'„':132,'…':133,'†':134,'‡':135,'ˆ':136,'‰':137,'Š':138,'‹':139,'Œ':140,'Ž':142,'‘':145,'’':146,'“':147,'”':148,'•':149,'–':150,'—':151,'˜':152,'™':153,'š':154,'›':155,'œ':156,'ž':158,'Ÿ':159};const arr=[];for(const c of s){const n=c.codePointAt(0);if(n<=127||(n>=160&&n<=255))arr.push(n);else if(map[c]!==undefined)arr.push(map[c]);else{const ent='&#'+n+';';for(const x of ent)arr.push(x.charCodeAt(0))}}return new Uint8Array(arr)}
 function download(content,name,type,encoding='utf8'){const bytes=encoding==='cp1252'?encode1252(content):new TextEncoder().encode(content);if(window.AndroidFiles&&typeof window.AndroidFiles.save==='function'){let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));window.AndroidFiles.save(name,type,btoa(binary));return}const u=URL.createObjectURL(new Blob([bytes],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
