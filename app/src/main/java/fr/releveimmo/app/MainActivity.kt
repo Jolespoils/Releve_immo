@@ -33,6 +33,7 @@ class MainActivity : Activity() {
     @Volatile private var geminiActiveConnection: HttpURLConnection? = null
     private val permissionCode = 43
     private val saveCode = 44
+    private val openXmlCode = 45
     private var pendingBytes: ByteArray? = null
     private var recognizer: SpeechRecognizer? = null
     private var listening = false
@@ -51,7 +52,7 @@ class MainActivity : Activity() {
         web.addJavascriptInterface(bridge, "AndroidFiles")
         web.addJavascriptInterface(bridge, "AndroidAI")
         setContentView(web)
-        web.loadUrl("file:///android_asset/index.html")
+        web.loadUrl("file:///android_asset/etape1/index.html")
     }
 
     private val keyAlias = "releve_immo_gemini_key"
@@ -79,6 +80,29 @@ class MainActivity : Activity() {
         cipher.init(Cipher.DECRYPT_MODE, cipherKey(), GCMParameterSpec(128, data.copyOfRange(0, 12)))
         return String(cipher.doFinal(data.copyOfRange(12, data.size)), Charsets.UTF_8)
     }
+    // Clés supplémentaires : chaque emplacement est chiffré avec Android Keystore.
+    // Aucun fournisseur externe n'est appelé tant que son adaptateur API n'est pas intégré.
+    private fun providerSlot(provider: String, slot: Int): String? {
+        if (provider !in setOf("groq", "openrouter") || slot !in 1..3) return null
+        return "provider_${provider}_$slot"
+    }
+    private fun storeProviderKey(provider: String, slot: Int, value: String): Boolean {
+        val name = providerSlot(provider, slot) ?: return false
+        if (value.isBlank()) { prefs.edit().remove(name).apply(); return true }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, cipherKey())
+        val data = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        prefs.edit().putString(name, Base64.encodeToString(data, Base64.NO_WRAP)).apply()
+        return true
+    }
+    private fun hasProviderKey(provider: String, slot: Int): Boolean {
+        val name = providerSlot(provider, slot) ?: return false
+        val encoded = prefs.getString(name, null) ?: return false
+        val data = Base64.decode(encoded, Base64.DEFAULT)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.DECRYPT_MODE, cipherKey(), GCMParameterSpec(128, data.copyOfRange(0, 12)))
+        return cipher.doFinal(data.copyOfRange(12, data.size)).isNotEmpty()
+    }
     private fun callback(name: String, vararg args: String) {
         runOnUiThread { web.evaluateJavascript("window.$name && window.$name(${args.joinToString(",")});", null) }
     }
@@ -99,6 +123,20 @@ class MainActivity : Activity() {
         @JavascriptInterface fun setGeminiKey(key: String) {
             val success = try { storeApiKey(key.trim()); true } catch (_: Exception) { false }
             callback("releveGeminiKeySaved", success.toString())
+        }
+        @JavascriptInterface fun setProviderKey(provider: String, slot: Int, key: String) {
+            val success = try { storeProviderKey(provider, slot, key.trim()) } catch (_: Exception) { false }
+            callback("releveProviderKeySaved", JSONObject.quote(provider), slot.toString(), success.toString(),
+                (success && key.isNotBlank()).toString())
+        }
+        @JavascriptInterface fun getProviderKeyStatus() {
+            val result = JSONObject()
+            for (provider in listOf("groq", "openrouter")) {
+                val values = JSONArray()
+                for (slot in 1..3) values.put(try { hasProviderKey(provider, slot) } catch (_: Exception) { false })
+                result.put(provider, values)
+            }
+            callback("releveProviderKeyStatus", JSONObject.quote(result.toString()))
         }
         @JavascriptInterface fun cancelGemini() {
             geminiRequestId.incrementAndGet()
@@ -291,6 +329,17 @@ class MainActivity : Activity() {
                 }
             }.start()
         }
+        @JavascriptInterface fun openXml() {
+            runOnUiThread {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "*/*"
+                    putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/xml", "text/xml", "text/plain", "application/octet-stream"))
+                }
+                try { startActivityForResult(intent, openXmlCode) }
+                catch (_: Exception) { sendFileStatus("Import XML indisponible") }
+            }
+        }
         @JavascriptInterface fun save(filename: String, mimeType: String, base64Data: String) {
             try {
                 val bytes = Base64.decode(base64Data, Base64.DEFAULT)
@@ -386,6 +435,17 @@ class MainActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == openXmlCode) {
+            if (resultCode == RESULT_OK && data?.data != null) {
+                try {
+                    val bytes = contentResolver.openInputStream(data.data!!)?.use { it.readBytes() }
+                        ?: throw IllegalStateException("Lecture impossible")
+                    if (bytes.size > 5_000_000) throw IllegalStateException("XML trop volumineux")
+                    callback("releveNativeXmlImported", JSONObject.quote(Base64.encodeToString(bytes, Base64.NO_WRAP)))
+                } catch (_: Exception) { sendFileStatus("Échec de l'import XML") }
+            }
+            return
+        }
         if (requestCode == saveCode) {
             val bytes = pendingBytes
             pendingBytes = null
