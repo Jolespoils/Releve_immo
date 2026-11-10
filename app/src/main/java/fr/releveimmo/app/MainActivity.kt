@@ -122,8 +122,10 @@ class MainActivity : Activity() {
                     val apiKey = loadApiKey()
                     if (apiKey.isEmpty()) throw IllegalStateException("Clé Gemini absente")
                     val prompt = """Tu analyses une transcription de visite immobilière en français. Extrais les pièces dans l'ordre de visite, leurs niveaux et les éventuelles justifications de non-visite et moyens à mettre en œuvre. Un escalier mentionné est une pièce à part entière nommée Escalier : ne l'oublie jamais, même lorsqu'il sert seulement à monter à l'étage. CONSERVE EXACTEMENT les noms particuliers donnés par l'utilisateur, notamment Chambre enfant, Chambre parentale, Chambre d'amis, Salle de jeu, Loveroom, Bureau principal, et tout nom inhabituel. Ne transforme jamais Loveroom en Chambre. Ne numérote que les pièces génériques répétées (Chambre 1, Chambre 2, etc.), jamais les noms particuliers. Ne fusionne jamais plusieurs pièces portant un même nom générique. Préserve leur ordre. Interprète le discours entier, les changements de niveau (monter, descendre, revenir au rez-de-chaussée), et les quantités (trois chambres = trois entrées). Le niveau persiste jusqu'au prochain changement explicite. Ne crée aucune pièce non mentionnée. Si un détail est incertain, laisse le champ vide ou utilise le niveau le plus plausible selon le contexte. Réponds UNIQUEMENT en JSON : {"pieces":[{"name":"Salon","floor":"Rez de chaussée","justification":"","means":""}]}. Niveaux autorisés : Sous-sol, Rez de chaussée, Entresol, 1er étage, 2e étage, 3e étage, 4e étage, 5e étage, Combles, Grenier, Toiture, Extérieur. Les champs justification et means sont vides pour une pièce visitée."""
-                    val payload = JSONObject().put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
-                        .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", transcript)))))
+                    val userMessage = prompt + "\n\nTRANSCRIPTION À ANALYSER :\n" + transcript
+                    val payload = JSONObject()
+                        .put("contents", JSONArray().put(JSONObject().put("role", "user")
+                            .put("parts", JSONArray().put(JSONObject().put("text", userMessage)))))
                         .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.1))
                     // Découverte des modèles autorisés pour cette clé.
                     val availableModels = mutableListOf<String>()
@@ -151,7 +153,7 @@ class MainActivity : Activity() {
                                     val name = model.optString("name").removePrefix("models/")
                                     // Écarter Live, audio, image, TTS et modèles non Gemini.
                                     if (name.startsWith("gemini-") &&
-                                        !listOf("live", "audio", "image", "tts", "embedding", "robotics")
+                                        !listOf("live", "audio", "image", "tts", "embedding", "robotics", "transcribe", "speech", "native-audio", "computer-use")
                                             .any { name.contains(it, ignoreCase = true) }) {
                                         availableModels.add(name)
                                     }
@@ -228,10 +230,12 @@ class MainActivity : Activity() {
                                 } catch (_: Exception) { "" }
                                 failures.add("$model: HTTP $status")
                                 progress("failed", model, "Échec HTTP $status")
-                                // 400/401/403 sont en général des erreurs de requête ou de clé.
-                                if (status == 400 || status == 401 || status == 403) {
+                                // 400 peut être propre à un modèle (format non accepté).
+                                // 401/403 indiquent généralement une erreur d'authentification ou d'accès.
+                                if (status == 401 || status == 403) {
                                     throw IllegalStateException("Gemini HTTP $status : " + detail.take(160))
                                 }
+                                if (status == 400) progress("failed", model, detail.take(140))
                                 continue
                             }
                             // Un HTTP 200 ne suffit pas : il faut un JSON de pièces exploitable.
