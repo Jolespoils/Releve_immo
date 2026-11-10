@@ -107,7 +107,7 @@ class MainActivity : Activity() {
                 try {
                     val apiKey = loadApiKey()
                     if (apiKey.isEmpty()) throw IllegalStateException("Clé Gemini absente")
-                    val prompt = """Tu analyses une transcription de visite immobilière en français. Extrais les pièces dans l'ordre de visite, leurs niveaux et les éventuelles justifications de non-visite et moyens à mettre en œuvre. Interprète le discours entier, les changements de niveau (monter, descendre, revenir au rez-de-chaussée), et les quantités (trois chambres = trois entrées). Le niveau persiste jusqu'au prochain changement explicite. Ne crée aucune pièce non mentionnée. Si un détail est incertain, laisse le champ vide ou utilise le niveau le plus plausible selon le contexte. Réponds UNIQUEMENT en JSON : {"pieces":[{"name":"Salon","floor":"Rez de chaussée","justification":"","means":""}]}. Niveaux autorisés : Sous-sol, Rez de chaussée, Entresol, 1er étage, 2e étage, 3e étage, 4e étage, 5e étage, Combles, Grenier, Toiture, Extérieur. Les champs justification et means sont vides pour une pièce visitée."""
+                    val prompt = """Tu analyses une transcription de visite immobilière en français. Extrais les pièces dans l'ordre de visite, leurs niveaux et les éventuelles justifications de non-visite et moyens à mettre en œuvre. Un escalier mentionné est une pièce à part entière nommée Escalier : ne l'oublie jamais, même lorsqu'il sert seulement à monter à l'étage. Préserve les noms particuliers tels que Chambre parentale, Chambre d'amis, Bureau principal. Interprète le discours entier, les changements de niveau (monter, descendre, revenir au rez-de-chaussée), et les quantités (trois chambres = trois entrées). Le niveau persiste jusqu'au prochain changement explicite. Ne crée aucune pièce non mentionnée. Si un détail est incertain, laisse le champ vide ou utilise le niveau le plus plausible selon le contexte. Réponds UNIQUEMENT en JSON : {"pieces":[{"name":"Salon","floor":"Rez de chaussée","justification":"","means":""}]}. Niveaux autorisés : Sous-sol, Rez de chaussée, Entresol, 1er étage, 2e étage, 3e étage, 4e étage, 5e étage, Combles, Grenier, Toiture, Extérieur. Les champs justification et means sont vides pour une pièce visitée."""
                     val payload = JSONObject().put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", transcript)))))
                         .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.1))
@@ -120,8 +120,8 @@ class MainActivity : Activity() {
                         val listing = URL(pageUrl).openConnection() as HttpURLConnection
                         try {
                             listing.setRequestProperty("x-goog-api-key", apiKey)
-                            listing.connectTimeout = 12000
-                            listing.readTimeout = 20000
+                            listing.connectTimeout = 8000
+                            listing.readTimeout = 12000
                             val listStatus = listing.responseCode
                             if (listStatus !in 200..299) {
                                 val raw = listing.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
@@ -161,7 +161,7 @@ class MainActivity : Activity() {
                         discovered.filter { it.contains("flash", ignoreCase = true) && it !in preferred }
                             .sorted() +
                         discovered.filter { !it.contains("flash", ignoreCase = true) }
-                            .sorted()).distinct().take(8)
+                            .sorted()).distinct().take(4)
                     if (models.isEmpty()) throw IllegalStateException(
                         "Aucun modèle Gemini de génération de texte disponible pour cette clé"
                     )
@@ -176,14 +176,24 @@ class MainActivity : Activity() {
                         connection.requestMethod = "POST"
                         connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                         connection.setRequestProperty("x-goog-api-key", apiKey)
-                        connection.connectTimeout = 12000
-                        connection.readTimeout = 30000
+                        connection.connectTimeout = 8000
+                        connection.readTimeout = 15000
                         connection.doOutput = true
-                        connection.outputStream.use {
-                            it.write(payload.toString().toByteArray(Charsets.UTF_8))
+                        try {
+                            connection.outputStream.use {
+                                it.write(payload.toString().toByteArray(Charsets.UTF_8))
+                            }
+                            status = connection.responseCode
+                            if (status in 200..299) break
+                        } catch (_: java.net.SocketTimeoutException) {
+                            failures.add("$model: délai dépassé")
+                            connection.disconnect()
+                            continue
+                        } catch (_: java.net.ConnectException) {
+                            failures.add("$model: connexion impossible")
+                            connection.disconnect()
+                            continue
                         }
-                        status = connection.responseCode
-                        if (status in 200..299) break
 
                         val rawError = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                         val detail = try {
