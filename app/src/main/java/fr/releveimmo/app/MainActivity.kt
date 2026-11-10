@@ -111,12 +111,11 @@ class MainActivity : Activity() {
                     val payload = JSONObject().put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", transcript)))))
                         .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.1))
-                    // Essayer d'autres modèles si le modèle principal renvoie 404.
-                    // Discover models enabled for this API key rather than hardcoding obsolete names.
+                    // Découverte des modèles autorisés pour cette clé.
                     val availableModels = mutableListOf<String>()
                     var pageToken: String? = null
                     do {
-                        val pageUrl = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000" +
+                        val pageUrl = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100" +
                             (pageToken?.let { "&pageToken=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
                         val listing = URL(pageUrl).openConnection() as HttpURLConnection
                         try {
@@ -127,7 +126,7 @@ class MainActivity : Activity() {
                             if (listStatus !in 200..299) {
                                 val raw = listing.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                                 val detail = try { JSONObject(raw).getJSONObject("error").optString("message") } catch (_: Exception) { "" }
-                                throw IllegalStateException("Liste Gemini HTTP $listStatus : " + detail.take(180))
+                                throw IllegalStateException("Liste des modèles HTTP $listStatus : " + detail.take(160))
                             }
                             val listingJson = JSONObject(listing.inputStream.bufferedReader().use { it.readText() })
                             val arr = listingJson.optJSONArray("models") ?: JSONArray()
@@ -136,40 +135,74 @@ class MainActivity : Activity() {
                                 val methods = model.optJSONArray("supportedGenerationMethods") ?: JSONArray()
                                 if ((0 until methods.length()).any { methods.optString(it) == "generateContent" }) {
                                     val name = model.optString("name").removePrefix("models/")
-                                    if (name.isNotBlank()) availableModels.add(name)
+                                    // Écarter Live, audio, image, TTS et modèles non Gemini.
+                                    if (name.startsWith("gemini-") &&
+                                        !listOf("live", "audio", "image", "tts", "embedding", "robotics")
+                                            .any { name.contains(it, ignoreCase = true) }) {
+                                        availableModels.add(name)
+                                    }
                                 }
                             }
                             pageToken = listingJson.optString("nextPageToken").ifBlank { null }
                         } finally { listing.disconnect() }
                     } while (pageToken != null && availableModels.size < 500)
-                    val models = availableModels.distinct().sortedWith(
-                        compareBy<String> { if (it.contains("flash", ignoreCase = true)) 0 else 1 }
-                            .thenBy { if (it.contains("lite", ignoreCase = true)) 1 else 0 }
-                            .thenByDescending { it }
+
+                    // Les modèles connus pour leur faible coût passent d'abord.
+                    // La liste API ne fournit PAS le quota réel : un 429 entraîne
+                    // un essai sur un autre modèle, sans boucle infinie.
+                    val preferred = listOf(
+                        "gemini-2.5-flash-lite",
+                        "gemini-2.5-flash",
+                        "gemini-3.8-flash",
+                        "gemini-3-flash"
                     )
-                    if (models.isEmpty()) throw IllegalStateException("Aucun modèle Gemini compatible avec generateContent pour cette clé")
+                    val discovered = availableModels.distinct()
+                    val models = (preferred.filter { it in discovered } +
+                        discovered.filter { it.contains("flash", ignoreCase = true) && it !in preferred }
+                            .sorted() +
+                        discovered.filter { !it.contains("flash", ignoreCase = true) }
+                            .sorted()).distinct().take(8)
+                    if (models.isEmpty()) throw IllegalStateException(
+                        "Aucun modèle Gemini de génération de texte disponible pour cette clé"
+                    )
+
                     var status = 0
-                    var errorDetail = ""
+                    val failures = mutableListOf<String>()
                     for (model in models) {
                         connection?.disconnect()
-                        connection = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection
+                        connection = URL(
+                            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+                        ).openConnection() as HttpURLConnection
                         connection.requestMethod = "POST"
                         connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                         connection.setRequestProperty("x-goog-api-key", apiKey)
                         connection.connectTimeout = 12000
                         connection.readTimeout = 30000
                         connection.doOutput = true
-                        connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+                        connection.outputStream.use {
+                            it.write(payload.toString().toByteArray(Charsets.UTF_8))
+                        }
                         status = connection.responseCode
                         if (status in 200..299) break
+
                         val rawError = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                        errorDetail = try { JSONObject(rawError).getJSONObject("error").optString("message") } catch (_: Exception) { "" }
-                        // Do not retry for quota, invalid key, or permissions errors.
-                        if (status != 404) break
+                        val detail = try {
+                            JSONObject(rawError).getJSONObject("error").optString("message")
+                        } catch (_: Exception) { "" }
+                        failures.add("$model: HTTP $status" +
+                            if (status == 429) " (quota)" else if (status == 404) " (introuvable)" else "")
+                        // Un 429 peut ne concerner qu'un modèle. Tester le suivant.
+                        // Une clé invalide ou un refus d'accès ne sera pas résolu par un autre modèle.
+                        if (status != 404 && status != 429) {
+                            throw IllegalStateException(
+                                "Gemini $model HTTP $status : " + detail.take(180)
+                            )
+                        }
                     }
                     if (status !in 200..299) {
-                        val detail = errorDetail.take(180).ifBlank { "Vérifie la clé et les modèles disponibles dans Google AI Studio" }
-                        throw IllegalStateException("Gemini HTTP $status : $detail")
+                        throw IllegalStateException(
+                            "Aucun modèle n'a accepté l'analyse : " + failures.joinToString("; ").take(300)
+                        )
                     }
                     val response = JSONObject(requireNotNull(connection).inputStream.bufferedReader().use { it.readText() })
                     val result = response.getJSONArray("candidates").getJSONObject(0).getJSONObject("content")
