@@ -29,6 +29,8 @@ import java.util.Locale
 
 class MainActivity : Activity() {
     private lateinit var web: WebView
+    private val geminiRequestId = java.util.concurrent.atomic.AtomicInteger(0)
+    @Volatile private var geminiActiveConnection: HttpURLConnection? = null
     private val permissionCode = 43
     private val saveCode = 44
     private var pendingBytes: ByteArray? = null
@@ -98,16 +100,28 @@ class MainActivity : Activity() {
             val success = try { storeApiKey(key.trim()); true } catch (_: Exception) { false }
             callback("releveGeminiKeySaved", success.toString())
         }
+        @JavascriptInterface fun cancelGemini() {
+            geminiRequestId.incrementAndGet()
+            geminiActiveConnection?.disconnect()
+            callback("releveGeminiCancelled")
+        }
         @JavascriptInterface fun analyzeGemini(transcript: String) {
             if (transcript.isBlank() || transcript.length > 50000) {
                 callback("releveGeminiError", JSONObject.quote("Transcription vide ou trop longue")); return
             }
+            val requestId = geminiRequestId.incrementAndGet()
             Thread {
                 var connection: HttpURLConnection? = null
+                fun current() = geminiRequestId.get() == requestId
+                fun progress(kind: String, model: String, detail: String) {
+                    if (current()) callback("releveGeminiProgress", JSONObject.quote(kind),
+                        JSONObject.quote(model), JSONObject.quote(detail))
+                }
                 try {
+                    progress("info", "", "Recherche des modèles Gemini disponibles…")
                     val apiKey = loadApiKey()
                     if (apiKey.isEmpty()) throw IllegalStateException("Clé Gemini absente")
-                    val prompt = """Tu analyses une transcription de visite immobilière en français. Extrais les pièces dans l'ordre de visite, leurs niveaux et les éventuelles justifications de non-visite et moyens à mettre en œuvre. Un escalier mentionné est une pièce à part entière nommée Escalier : ne l'oublie jamais, même lorsqu'il sert seulement à monter à l'étage. Préserve les noms particuliers tels que Chambre parentale, Chambre d'amis, Bureau principal. Interprète le discours entier, les changements de niveau (monter, descendre, revenir au rez-de-chaussée), et les quantités (trois chambres = trois entrées). Le niveau persiste jusqu'au prochain changement explicite. Ne crée aucune pièce non mentionnée. Si un détail est incertain, laisse le champ vide ou utilise le niveau le plus plausible selon le contexte. Réponds UNIQUEMENT en JSON : {"pieces":[{"name":"Salon","floor":"Rez de chaussée","justification":"","means":""}]}. Niveaux autorisés : Sous-sol, Rez de chaussée, Entresol, 1er étage, 2e étage, 3e étage, 4e étage, 5e étage, Combles, Grenier, Toiture, Extérieur. Les champs justification et means sont vides pour une pièce visitée."""
+                    val prompt = """Tu analyses une transcription de visite immobilière en français. Extrais les pièces dans l'ordre de visite, leurs niveaux et les éventuelles justifications de non-visite et moyens à mettre en œuvre. Un escalier mentionné est une pièce à part entière nommée Escalier : ne l'oublie jamais, même lorsqu'il sert seulement à monter à l'étage. CONSERVE EXACTEMENT les noms particuliers donnés par l'utilisateur, notamment Chambre enfant, Chambre parentale, Chambre d'amis, Salle de jeu, Loveroom, Bureau principal, et tout nom inhabituel. Ne transforme jamais Loveroom en Chambre. Ne numérote que les pièces génériques répétées (Chambre 1, Chambre 2, etc.), jamais les noms particuliers. Ne fusionne jamais plusieurs pièces portant un même nom générique. Préserve leur ordre. Interprète le discours entier, les changements de niveau (monter, descendre, revenir au rez-de-chaussée), et les quantités (trois chambres = trois entrées). Le niveau persiste jusqu'au prochain changement explicite. Ne crée aucune pièce non mentionnée. Si un détail est incertain, laisse le champ vide ou utilise le niveau le plus plausible selon le contexte. Réponds UNIQUEMENT en JSON : {"pieces":[{"name":"Salon","floor":"Rez de chaussée","justification":"","means":""}]}. Niveaux autorisés : Sous-sol, Rez de chaussée, Entresol, 1er étage, 2e étage, 3e étage, 4e étage, 5e étage, Combles, Grenier, Toiture, Extérieur. Les champs justification et means sont vides pour une pièce visitée."""
                     val payload = JSONObject().put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt))))
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", transcript)))))
                         .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.1))
@@ -147,87 +161,130 @@ class MainActivity : Activity() {
                         } finally { listing.disconnect() }
                     } while (pageToken != null && availableModels.size < 500)
 
-                    // Les modèles connus pour leur faible coût passent d'abord.
-                    // La liste API ne fournit PAS le quota réel : un 429 entraîne
-                    // un essai sur un autre modèle, sans boucle infinie.
-                    val preferred = listOf(
-                        "gemini-2.5-flash-lite",
-                        "gemini-2.5-flash",
-                        "gemini-3.8-flash",
-                        "gemini-3-flash"
+                    // Tous les modèles texte proposés par Google, sans limite arbitraire de 4 ou 8.
+                    // Classement indicatif par génération puis gamme : Pro, Flash, Flash-Lite.
+                    // L'API ne garantit pas qu'un modèle répertorié soit utilisable avec le quota de la clé.
+                    fun modelRank(name: String): Long {
+                        val version = Regex("""gemini-(\d+)(?:\.(\d+))?""").find(name)
+                        val major = version?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                        val minor = version?.groupValues?.get(2)?.toLongOrNull() ?: 0L
+                        val family = when {
+                            name.contains("pro", true) -> 3L
+                            name.contains("flash-lite", true) -> 1L
+                            name.contains("flash", true) -> 2L
+                            else -> 0L
+                        }
+                        val stable = if (name.contains("preview", true) || name.contains("exp", true)) 0L else 1L
+                        return major * 100000L + minor * 1000L + family * 10L + stable
+                    }
+                    val discovered = availableModels.distinct().sortedWith(
+                        compareByDescending<String> { modelRank(it) }.thenBy { it }
                     )
-                    val discovered = availableModels.distinct()
-                    val models = (preferred.filter { it in discovered } +
-                        discovered.filter { it.contains("flash", ignoreCase = true) && it !in preferred }
-                            .sorted() +
-                        discovered.filter { !it.contains("flash", ignoreCase = true) }
-                            .sorted()).distinct().take(4)
-                    if (models.isEmpty()) throw IllegalStateException(
+                    // Un modèle qui a réellement généré du texte (Gemini 3 Flash)
+                    // passe avant les modèles récemment indisponibles, sans les exclure.
+                    val workingCandidates = listOf("gemini-3-flash", "gemini-3-flash-preview")
+                    if (discovered.isEmpty()) throw IllegalStateException(
                         "Aucun modèle Gemini de génération de texte disponible pour cette clé"
                     )
-
-                    var status = 0
+                    // Le dernier modèle ayant réussi est prioritaire, mais n'empêche jamais
+                    // de tester les autres lorsqu'il échoue.
+                    val remembered = prefs.getString("last_working_gemini_model", "").orEmpty()
+                    val models = (listOf(remembered).filter { it in discovered } +
+                        workingCandidates.filter { it in discovered } + discovered).distinct()
                     val failures = mutableListOf<String>()
-                    for (model in models) {
+                    val startedAt = android.os.SystemClock.elapsedRealtime()
+                    var parsed: JSONObject? = null
+                    var chosenModel = ""
+                    progress("info", "", "${models.size} modèle(s) compatible(s) trouvé(s)")
+                    for ((index, model) in models.withIndex()) {
+                        if (!current()) return@Thread
+                        progress("trying", model, "Modèle ${index + 1}/${models.size} — analyse en cours")
+                        // Évite de laisser l'utilisateur attendre plusieurs minutes.
+                        if (android.os.SystemClock.elapsedRealtime() - startedAt > 90000L) {
+                            failures.add("délai global de 90 s atteint")
+                            break
+                        }
                         connection?.disconnect()
-                        connection = URL(
-                            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
-                        ).openConnection() as HttpURLConnection
-                        connection.requestMethod = "POST"
-                        connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                        connection.setRequestProperty("x-goog-api-key", apiKey)
-                        connection.connectTimeout = 8000
-                        connection.readTimeout = 15000
-                        connection.doOutput = true
                         try {
-                            connection.outputStream.use {
+                            connection = URL(
+                                "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+                            ).openConnection() as HttpURLConnection
+                            geminiActiveConnection = connection
+                            val conn = requireNotNull(connection)
+                            conn.requestMethod = "POST"
+                            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                            conn.setRequestProperty("x-goog-api-key", apiKey)
+                            conn.connectTimeout = 7000
+                            conn.readTimeout = 12000
+                            conn.doOutput = true
+                            conn.outputStream.use {
                                 it.write(payload.toString().toByteArray(Charsets.UTF_8))
                             }
-                            status = connection.responseCode
-                            if (status in 200..299) break
+                            val status = conn.responseCode
+                            if (status !in 200..299) {
+                                val rawError = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                val detail = try {
+                                    JSONObject(rawError).getJSONObject("error").optString("message")
+                                } catch (_: Exception) { "" }
+                                failures.add("$model: HTTP $status")
+                                progress("failed", model, "Échec HTTP $status")
+                                // 400/401/403 sont en général des erreurs de requête ou de clé.
+                                if (status == 400 || status == 401 || status == 403) {
+                                    throw IllegalStateException("Gemini HTTP $status : " + detail.take(160))
+                                }
+                                continue
+                            }
+                            // Un HTTP 200 ne suffit pas : il faut un JSON de pièces exploitable.
+                            val response = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+                            val result = response.getJSONArray("candidates").getJSONObject(0)
+                                .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+                            val candidate = JSONObject(result)
+                            val pieces = candidate.getJSONArray("pieces")
+                            if (pieces.length() == 0 || pieces.length() > 200) {
+                                failures.add("$model: réponse vide ou invalide")
+                                progress("failed", model, "Réponse vide ou invalide")
+                                continue
+                            }
+                            var valid = true
+                            for (i in 0 until pieces.length()) {
+                                if (pieces.getJSONObject(i).optString("name").isBlank()) valid = false
+                            }
+                            if (!valid) {
+                                failures.add("$model: pièce sans nom")
+                                progress("failed", model, "Pièce sans nom")
+                                continue
+                            }
+                            parsed = candidate
+                            chosenModel = model
+                            progress("success", model, "Analyse réussie")
+                            break
                         } catch (_: java.net.SocketTimeoutException) {
-                            failures.add("$model: délai dépassé")
-                            connection.disconnect()
-                            continue
+                            failures.add("$model: timeout")
+                            progress("failed", model, "Délai dépassé")
                         } catch (_: java.net.ConnectException) {
                             failures.add("$model: connexion impossible")
-                            connection.disconnect()
-                            continue
-                        }
-
-                        val rawError = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                        val detail = try {
-                            JSONObject(rawError).getJSONObject("error").optString("message")
-                        } catch (_: Exception) { "" }
-                        failures.add("$model: HTTP $status" +
-                            if (status == 429) " (quota)" else if (status == 404) " (introuvable)" else if (status in listOf(500, 502, 503, 504)) " (serveur indisponible)" else "")
-                        // Les erreurs de quota, de modèle et de surcharge peuvent ne concerner qu'un modèle.
-                        // Une clé invalide ou un refus d'accès ne sera pas résolu par un autre modèle.
-                        if (status !in listOf(404, 429, 500, 502, 503, 504)) {
-                            throw IllegalStateException(
-                                "Gemini $model HTTP $status : " + detail.take(180)
-                            )
+                            progress("failed", model, "Connexion impossible")
+                        } catch (e: org.json.JSONException) {
+                            failures.add("$model: réponse JSON invalide")
+                            progress("failed", model, "Réponse JSON invalide")
+                        } finally {
+                            connection?.disconnect()
+                            geminiActiveConnection = null
+                            connection = null
                         }
                     }
-                    if (status !in 200..299) {
-                        throw IllegalStateException(
-                            "Aucun modèle n'a accepté l'analyse : " + failures.joinToString("; ").take(300)
-                        )
-                    }
-                    val response = JSONObject(requireNotNull(connection).inputStream.bufferedReader().use { it.readText() })
-                    val result = response.getJSONArray("candidates").getJSONObject(0).getJSONObject("content")
-                        .getJSONArray("parts").getJSONObject(0).getString("text")
-                    val parsed = JSONObject(result)
-                    val pieces = parsed.getJSONArray("pieces")
-                    if (pieces.length() == 0 || pieces.length() > 200) throw IllegalStateException("Réponse IA invalide")
-                    for (i in 0 until pieces.length()) {
-                        val room = pieces.getJSONObject(i)
-                        if (room.optString("name").isBlank()) throw IllegalStateException("Pièce sans nom")
-                    }
-                    callback("releveGeminiResult", JSONObject.quote(parsed.toString()))
+                    if (parsed == null) throw IllegalStateException(
+                        "Aucun modèle opérationnel : " + failures.joinToString("; ").take(400)
+                    )
+                    if (!current()) return@Thread
+                    prefs.edit().putString("last_working_gemini_model", chosenModel).apply()
+                    callback("releveGeminiResult", JSONObject.quote(requireNotNull(parsed).toString()))
                 } catch (e: Exception) {
-                    callback("releveGeminiError", JSONObject.quote(e.message ?: "Analyse IA indisponible"))
-                } finally { connection?.disconnect() }
+                    if (current()) callback("releveGeminiError", JSONObject.quote(e.message ?: "Analyse IA indisponible"))
+                } finally {
+                    connection?.disconnect()
+                    if (current()) geminiActiveConnection = null
+                }
             }.start()
         }
         @JavascriptInterface fun save(filename: String, mimeType: String, base64Data: String) {
