@@ -112,7 +112,42 @@ class MainActivity : Activity() {
                         .put("contents", JSONArray().put(JSONObject().put("role", "user").put("parts", JSONArray().put(JSONObject().put("text", transcript)))))
                         .put("generationConfig", JSONObject().put("responseMimeType", "application/json").put("temperature", 0.1))
                     // Essayer d'autres modèles si le modèle principal renvoie 404.
-                    val models = listOf("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash")
+                    // Discover models enabled for this API key rather than hardcoding obsolete names.
+                    val availableModels = mutableListOf<String>()
+                    var pageToken: String? = null
+                    do {
+                        val pageUrl = "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000" +
+                            (pageToken?.let { "&pageToken=" + java.net.URLEncoder.encode(it, "UTF-8") } ?: "")
+                        val listing = URL(pageUrl).openConnection() as HttpURLConnection
+                        try {
+                            listing.setRequestProperty("x-goog-api-key", apiKey)
+                            listing.connectTimeout = 12000
+                            listing.readTimeout = 20000
+                            val listStatus = listing.responseCode
+                            if (listStatus !in 200..299) {
+                                val raw = listing.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                val detail = try { JSONObject(raw).getJSONObject("error").optString("message") } catch (_: Exception) { "" }
+                                throw IllegalStateException("Liste Gemini HTTP $listStatus : " + detail.take(180))
+                            }
+                            val listingJson = JSONObject(listing.inputStream.bufferedReader().use { it.readText() })
+                            val arr = listingJson.optJSONArray("models") ?: JSONArray()
+                            for (i in 0 until arr.length()) {
+                                val model = arr.getJSONObject(i)
+                                val methods = model.optJSONArray("supportedGenerationMethods") ?: JSONArray()
+                                if ((0 until methods.length()).any { methods.optString(it) == "generateContent" }) {
+                                    val name = model.optString("name").removePrefix("models/")
+                                    if (name.isNotBlank()) availableModels.add(name)
+                                }
+                            }
+                            pageToken = listingJson.optString("nextPageToken").ifBlank { null }
+                        } finally { listing.disconnect() }
+                    } while (pageToken != null && availableModels.size < 500)
+                    val models = availableModels.distinct().sortedWith(
+                        compareBy<String> { if (it.contains("flash", ignoreCase = true)) 0 else 1 }
+                            .thenBy { if (it.contains("lite", ignoreCase = true)) 1 else 0 }
+                            .thenByDescending { it }
+                    )
+                    if (models.isEmpty()) throw IllegalStateException("Aucun modèle Gemini compatible avec generateContent pour cette clé")
                     var status = 0
                     var errorDetail = ""
                     for (model in models) {
@@ -129,6 +164,7 @@ class MainActivity : Activity() {
                         if (status in 200..299) break
                         val rawError = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
                         errorDetail = try { JSONObject(rawError).getJSONObject("error").optString("message") } catch (_: Exception) { "" }
+                        // Do not retry for quota, invalid key, or permissions errors.
                         if (status != 404) break
                     }
                     if (status !in 200..299) {
