@@ -88,7 +88,40 @@ function licielInfo(value){
   text=text.replace(/\s+-\s+-\s+/g,' - ').replace(/^\s*-\s*|\s*-\s*$/g,'').trim();
   return text;
 }
-function drawStep2(){const root=$('components');root.replaceChildren();step2Items.forEach((r,i)=>{const card=document.createElement('div');card.className='room';const title=document.createElement('strong');title.textContent='Composant '+(i+1);card.append(title);for(const [field,label] of [['Localistion','Localisation (niveau - pièce)'],['Type','Type (Sol, Mur - A, Plafond…)'],['Informations','Informations (substrat, revêtement…)']]){const l=document.createElement('label');l.textContent=label;const input=document.createElement('input');input.value=field==='Informations'?licielInfo(r[field]):(r[field]||'');input.oninput=()=>{r[field]=field==='Informations'?licielInfo(input.value):input.value;markDirty();};card.append(l,input)}const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Autres champs Liciel';details.append(summary);for(const field of step2Fields.filter(x=>!['Localistion','Type','Informations'].includes(x))){const l=document.createElement('label');l.textContent=field;const input=document.createElement('input');input.value=r[field]||'';input.oninput=()=>{r[field]=input.value;markDirty();};details.append(l,input)}card.append(details);const del=document.createElement('button');del.textContent='Supprimer ce composant';del.className='delete-component';del.onclick=()=>{step2Items.splice(i,1);markDirty();drawStep2()};card.append(del);root.append(card)})}
+// Uniformisation des libellés Liciel, sans inventer de repères.
+function normalizeComponentType(value){
+  let t=String(value||'').trim().replace(/\s+/g,' ');
+  t=t.replace(/^(Fenêtre|Volet|Porte(?: d['’]entrée| de placard| de garage)?|Placard|Grille|Poutre)\s*-\s*(\d+)\b/i,'$1 $2');
+  t=t.replace(/^(Fenêtre|Volet|Porte(?: d['’]entrée| de placard| de garage)?|Placard|Grille|Poutre)\s+(\d+)\s+([A-J])$/i,'$1 $2 - $3');
+  t=t.replace(/^Porte\s+d['’]entrée/i,"Porte d'entrée");
+  t=t.replace(/^Porte\s+de\s+placard/i,'Porte de placard');
+  t=t.replace(/^Porte\s+de\s+garage/i,'Porte de garage');
+  t=t.replace(/^Allège\s*(?:de\s+)?mur\s*-?\s*([A-J])$/i,'Mur avec allège - $1');
+  return t;
+}
+function normalizeComponentInfo(value){
+  let t=licielInfo(value);
+  // Une date de substrat ne doit jamais être attribuée à la peinture.
+  t=t.replace(/(Revêtement\s*:\s*[^-]+?)\s*-?\s*(>\s*\d{2,4})\b/gi,(full,coat,date)=>{
+    if(!/Substrat\s*:/i.test(t))return full;
+    return coat.trim();
+  });
+  const misplaced=String(value||'').match(/Revêtement\s*:\s*[^-]+?\s*-?\s*(>\s*\d{2,4})\b/i);
+  if(misplaced&&/Substrat\s*:/i.test(t)&&!new RegExp('Substrat\\s*:[^-]*'+misplaced[1].replace(/\s/g,'\\s*')).test(t))
+    t=t.replace(/(Substrat\s*:\s*[^-]+)/i,(m)=>m.trim()+' - '+misplaced[1].replace(/\s/g,''));
+  return t.replace(/\s+-\s+-\s+/g,' - ').trim();
+}
+function referenceRoomsForAI(){
+  return pieceData.map((p,i)=>({name:rooms[i].name,floor:rooms[i].floor,validated:p.validated,
+    components:p.items.map(x=>({type:x.Type,info:x.Informations}))}))
+    .filter((x,i)=>i!==selectedPiece&&x.validated&&x.components.length);
+}
+function referenceContext(){
+  const refs=referenceRoomsForAI();
+  if(!refs.length)return '';
+  return '\n\nCOMPOSANTS DÉJÀ VALIDÉS DANS LES AUTRES PIÈCES (références uniquement, ne pas les ajouter à la pièce courante sauf demande explicite de copie) :\n'+JSON.stringify(refs);
+}
+function drawStep2(){const root=$('components');root.replaceChildren();step2Items.forEach((r,i)=>{const card=document.createElement('div');card.className='room';const title=document.createElement('strong');title.textContent='Composant '+(i+1);card.append(title);for(const [field,label] of [['Localistion','Localisation (niveau - pièce)'],['Type','Type (Sol, Mur - A, Plafond…)'],['Informations','Informations (substrat, revêtement…)']]){const l=document.createElement('label');l.textContent=label;const input=document.createElement('input');input.value=field==='Informations'?normalizeComponentInfo(r[field]):(r[field]||'');input.oninput=()=>{r[field]=field==='Informations'?normalizeComponentInfo(input.value):field==='Type'?normalizeComponentType(input.value):input.value;markDirty();};card.append(l,input)}const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Autres champs Liciel';details.append(summary);for(const field of step2Fields.filter(x=>!['Localistion','Type','Informations'].includes(x))){const l=document.createElement('label');l.textContent=field;const input=document.createElement('input');input.value=r[field]||'';input.oninput=()=>{r[field]=input.value;markDirty();};details.append(l,input)}card.append(details);const del=document.createElement('button');del.textContent='Supprimer ce composant';del.className='delete-component';del.onclick=()=>{step2Items.splice(i,1);markDirty();drawStep2()};card.append(del);root.append(card)})}
 $('addcomponent').onclick=()=>{const item=step2Blank();item.Localistion=roomLocation(selectedPiece);step2Items.push(item);markDirty();drawStep2()};
 
 // Analyse locale conservatrice : une ligne par composant, sans inventer de mesures CREP.
@@ -98,7 +131,7 @@ function componentsFromDictation(raw){
   const out=[], warnings=[];let place='',floor='';
   const places=['salon avec cuisine','salon cuisine','salle de bain','salle de jeu','chambre','placard','wc','toilettes','plenum','cave','garage','buanderie','cuisine','salon'];
   const knownRooms=rooms.map(r=>({name:r.name,floor:r.floor}));
-  function add(type,info){if(!place){warnings.push('Localisation manquante pour '+type);return}const r=step2Blank();r.Localistion=(floor?floor+' - ':'')+place;r.Type=type;r.Informations=licielInfo(info);out.push(r)}
+  function add(type,info){if(!place){warnings.push('Localisation manquante pour '+type);return}const r=step2Blank();r.Localistion=(floor?floor+' - ':'')+place;r.Type=normalizeComponentType(type);r.Informations=normalizeComponentInfo(info);out.push(r)}
   function infoFor(t){const n=norm2(t);let substrate='',coat='';
     const substrateMatch=n.match(/(?:substrat\s*:\s*)?(placoplatre|placo|platre|plate|beton|parquet|carrelage|bois|pvc|metal|pierre)/);
     if(substrateMatch){substrate=({'placo':'placoplâtre','placoplatre':'placoplâtre','plate':'Plâtre','platre':'Plâtre','beton':'Béton','bois':'Bois','metal':'Métal','pierre':'Pierre','parquet':'Parquet','carrelage':'Carrelage','pvc':'PVC'})[substrateMatch[1]]||substrateMatch[1]}
@@ -117,15 +150,15 @@ function componentsFromDictation(raw){
     if(!place)continue;
     const info=infoFor(t);
     const wall=n.match(/\bmurs?\b/);
-    if(wall){const ls=letters(t);if(ls.length){for(const l of [...new Set(ls)])add('Mur - '+l,info)}else warnings.push('Mur(s) sans lettre certaine : '+t.slice(0,75));continue}
+    if(wall){const ls=letters(t);if(ls.length){for(const l of [...new Set(ls)])add(/avec\s+all[eè]ge|avec\s+allege/.test(n)?'Mur avec allège - '+l:'Mur - '+l,info)}else if(/\bmur\b/.test(n))add(/avec\s+all[eè]ge|avec\s+allege/.test(n)?'Mur avec allège':'Mur',info);else warnings.push('Murs pluriels sans nombre ni repère : '+t.slice(0,75));continue}
     const special=n.match(/\b(embrasure|allege|alle?ge)\b/);
     if(special){const ls=letters(t);const kind=special[1]==='embrasure'?'Embrasure fenêtre':'Allège fenêtre';if(ls.length)for(const l of [...new Set(ls)])add(kind+' - '+l,info);else warnings.push(kind+' : lettre non reconnue');continue}
     if(/\b(plinthes?|plaintes?)\b/.test(n)){add('Plinthes',info);continue}
     if(/\bplafond\b/.test(n)){add('Plafond',info);continue}
     if(/\bsol\b/.test(n)){add('Sol',info);continue}
-    if(/\bpoutres?\b/.test(n)){add('Poutres',info);continue}
-    for(const [re,kind] of [[/\bfenetre\b/,'Fenêtre'],[/\bvolet\b/,'Volet'],[/\bgrille\b/,'Grilles'],[/\bporte\b/,'Porte']]){
-      if(re.test(n)){const letter=n.match(/\b(?:en|sur|de|fenetre|volet|grille|porte)\s+([a-j])\b/);const nums=[...n.matchAll(/\b(?:fenetre|volet)\s*(\d+)\b/g)].map(x=>x[1]);if(nums.length){for(const no of [...new Set(nums)])add(kind+' '+no+(letter?' - '+letter[1].toUpperCase():''),info)}else add(kind+(letter?' - '+letter[1].toUpperCase():''),info);break}
+    if(/\bpoutres?\b/.test(n)){add(/\bpoutre\b/.test(n)?'Poutre':'Poutres',info);continue}
+    for(let [re,kind] of [[/\bfenetre\b/,'Fenêtre'],[/\bvolet\b/,'Volet'],[/\bgrille\b/,'Grilles'],[/\bporte\b/,'Porte']]){
+      if(re.test(n)){if(kind==='Porte')kind=/porte\s+d['’]entree/.test(n)?"Porte d'entrée":/porte\s+de\s+placard/.test(n)?'Porte de placard':/porte\s+de\s+garage/.test(n)?'Porte de garage':'Porte';const letter=n.match(/\b(?:en|sur|de|fenetre|volet|grille|porte)\s+([a-j])\b/);const nums=[...n.matchAll(/\b(?:fenetre|volet)\s*(\d+)\b/g)].map(x=>x[1]);if(nums.length){for(const no of [...new Set(nums)])add(kind+' '+no+(letter?' - '+letter[1].toUpperCase():''),info)}else add(kind+(letter?' - '+letter[1].toUpperCase():''),info);break}
     }
   }
   return {items:out,warnings};
@@ -160,7 +193,7 @@ window.releveStep2Result=(json,provider)=>{
       const match=rooms[selectedPiece];
       const r=step2Blank();
       r.Localistion=roomLocation(selectedPiece);
-      r.Type=item.type.trim();r.Informations=licielInfo(item.info);
+      r.Type=normalizeComponentType(item.type);r.Informations=normalizeComponentInfo(item.info);
       out.push(r);
     }
     step2Analyzing=false;$('parse2').disabled=false;
@@ -176,7 +209,7 @@ $('parse2').onclick=()=>{
   if(window.AndroidAI&&typeof window.AndroidAI.analyzeStep2==='function'){
     step2Analyzing=true;$('parse2').disabled=true;
     $('parse2status').textContent='Recherche des IA disponibles…';
-    try{window.AndroidAI.analyzeStep2('Dans '+rooms[selectedPiece].name+', '+raw,JSON.stringify([rooms[selectedPiece]]));}
+    try{window.AndroidAI.analyzeStep2('Dans '+rooms[selectedPiece].name+', '+raw+referenceContext(),JSON.stringify([rooms[selectedPiece]]));}
     catch(e){localFallback('appel Android impossible');}
   }else{
     localFallback('Version Android sans module IA pour l’étape 2');
@@ -186,8 +219,8 @@ $('parse2').onclick=()=>{
 
 function encode1252(s){const map={'€':128,'‚':130,'ƒ':131,'„':132,'…':133,'†':134,'‡':135,'ˆ':136,'‰':137,'Š':138,'‹':139,'Œ':140,'Ž':142,'‘':145,'’':146,'“':147,'”':148,'•':149,'–':150,'—':151,'˜':152,'™':153,'š':154,'›':155,'œ':156,'ž':158,'Ÿ':159};const arr=[];for(const c of s){const n=c.codePointAt(0);if(n<=127||(n>=160&&n<=255))arr.push(n);else if(map[c]!==undefined)arr.push(map[c]);else{const ent='&#'+n+';';for(const x of ent)arr.push(x.charCodeAt(0))}}return new Uint8Array(arr)}
 function download(content,name,type,encoding='utf8'){const bytes=encoding==='cp1252'?encode1252(content):new TextEncoder().encode(content);if(window.AndroidFiles&&typeof window.AndroidFiles.save==='function'){let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));window.AndroidFiles.save(name,type,btoa(binary));return}const u=URL.createObjectURL(new Blob([bytes],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
-function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
-function exportStep2(){storePiece();const allItems=pieceData.flatMap(p=>p.items);if(!allItems.length){alert('Ajoute au moins un composant.');return}const xml='<LiTable_General_Desciption_Pieces>\r'+allItems.map((r,i)=>'     <LiItem_table_General_Desciption_Pieces>\r'+step2Fields.map(k=>'          <LiColonne_'+k+'>'+xmlEscape(k==='Informations'?licielInfo(r[k]):(r[k]||''))+'</LiColonne_'+k+'>').join('\r')+'\r     </LiItem_table_General_Desciption_Pieces>').join('\r')+'\r</LiTable_General_Desciption_Pieces>\r';download(xml,'Table_General_Desciption_Pieces.xml','application/xml','cp1252')}
+function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+function exportStep2(){storePiece();const allItems=pieceData.flatMap(p=>p.items);if(!allItems.length){alert('Ajoute au moins un composant.');return}const xml='<LiTable_General_Desciption_Pieces>\r'+allItems.map((r,i)=>'     <LiItem_table_General_Desciption_Pieces>\r'+step2Fields.map(k=>'          <LiColonne_'+k+'>'+xmlEscape(k==='Informations'?normalizeComponentInfo(r[k]):k==='Type'?normalizeComponentType(r[k]):(r[k]||''))+'</LiColonne_'+k+'>').join('\r')+'\r     </LiItem_table_General_Desciption_Pieces>').join('\r')+'\r</LiTable_General_Desciption_Pieces>\r';download(xml,'Table_General_Desciption_Pieces.xml','application/xml','cp1252')}
 $('exportstep2').onclick=exportStep2;
 
 function exportTxtStep2(){
@@ -212,7 +245,7 @@ function exportTxtStep2(){
     lines.push('', 'Composant '+(i+1),
       'Localisation : '+(r.Localistion||''),
       'Type : '+(r.Type||''),
-      'Informations : '+licielInfo(r.Informations));
+      'Informations : '+normalizeComponentInfo(r.Informations));
     for(const key of step2Fields.filter(k=>!['Localistion','Type','Informations'].includes(k))){
       if(r[key])lines.push(key+' : '+r[key]);
     }
