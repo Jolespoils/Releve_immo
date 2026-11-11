@@ -203,19 +203,24 @@ class MainActivity : Activity() {
             fun current() = geminiRequestId.get() == requestId
             fun progress(message: String) { if (current()) callback("releveStep2Progress", JSONObject.quote(message)) }
             val roomArray = try { JSONArray(roomsJson) } catch (_: Exception) { JSONArray() }
-            val prompt = """Tu es un diagnostiqueur immobilier. Convertis la dictée en composants Liciel pour UNE pièce sélectionnée.
-Chaque élément physique = UNE ligne. Respecte strictement les quantités, matériaux, types, numéros et repères explicitement dictés.
-NOM ET REPÈRE : « fenêtre 1 et fenêtre 2 en D » = Fenêtre 1 - D ET Fenêtre 2 - D ; « volet 1 et volet 2 en D » = Volet 1 - D ET Volet 2 - D ; « porte 1 et porte 2 en D » = Porte 1 - D ET Porte 2 - D. Ne crée JAMAIS « Fenêtre - 1 ». Le numéro suit le nom sans tiret ; le repère alphabétique, s'il existe, vient après « - ».
-Ne remplace JAMAIS une seconde fenêtre ou un second volet par un avertissement ou un seul composant lorsque la dictée en mentionne deux. Les numéros servent à distinguer les éléments identiques d'une même pièce ; les lettres désignent les emplacements. « deuxième fenêtre identique à la première, en D » = Fenêtre 2 - D, avec le même substrat et revêtement que Fenêtre 1. Idem pour volets, portes et placards.
-Ne crée aucun repère alphabétique non dicté. « un mur en béton » = type « Mur » (sans A, B ni 1). « une poutre en bois » = « Poutre » (sans A ni 1). « un mur en pierre et un mur en placo » = deux lignes « Mur », chacune avec son substrat, SANS lettres inventées. Si les murs A B C D sont explicitement dictés, crée Mur - A, Mur - B, Mur - C, Mur - D.
-Différencie « Porte », « Porte d'entrée », « Porte de placard » et « Porte de garage ». Ne raccourcis jamais « porte d'entrée » en « Porte ».
-« Mur avec allège - A » et « Mur - A » sont deux composants distincts. Pour un WC avec quatre murs A B C D et une partie basse carrelée décrite comme mur avec allège, crée 8 lignes : Mur - A/B/C/D et Mur avec allège - A/B/C/D, avec matériaux/revêtements appropriés. Ne transforme pas « mur avec allège » en « Allège fenêtre ». Une véritable allège de fenêtre reste « Allège fenêtre » distincte de son embrasure et de la fenêtre.
-Un volet sur le mur D garde le repère D : ne le rattache jamais à « mur 1 » ou « mur 2 » non dicté.
-ÉPOQUE : « substrat bois supérieur à 1949, peinture » => « Substrat : Bois - >1949 - Revêtement : Peinture ». >1949 qualifie le SUBSTRAT, jamais la peinture ni le revêtement. « après 1949 » et « supérieur à 1949 » deviennent >1949. Conserve les années réellement dictées. N'invente aucun revêtement : si absent, omets « Revêtement : ».
-RÉFÉRENCES : la dictée peut inclure un bloc « COMPOSANTS DÉJÀ VALIDÉS DANS LES AUTRES PIÈCES » en JSON. C'est une mémoire de référence, pas des composants à produire. Si la dictée dit « salle de bain identique au WC sauf la fenêtre et la grille en B au lieu de C », reprends TOUS les composants du WC dans la salle de bain et change UNIQUEMENT le repère de la fenêtre et de la grille de C vers B. Préserve leurs matériaux, numéros et autres repères. Si aucune référence au WC n'est fournie, ne devine pas ses composants : avertis dans warnings.
-N'invente jamais de composants, de dimensions, de plomb ou de dégradation CREP. Corrige les erreurs évidentes de dictée sans changer le sens.
-La pièce courante est la seule pièce autorisée dans components. Réponds UNIQUEMENT en JSON : {"components":[{"room":"Salon","type":"Fenêtre 1 - D","info":"Substrat : PVC - >1949 - Revêtement : Peinture"}],"warnings":[]}.
-PIÈCE COURANTE : """ + roomArray.toString() + "\nDICTÉE ET RÉFÉRENCES :\n" + transcript
+            val prompt = """Tu es un diagnostiqueur immobilier et tu convertis une dictée française imparfaitement transcrite en composants Liciel.
+Chaque élément physique est UNE ligne distincte, même si plusieurs partagent les mêmes matériaux.
+Exemple : « murs A B C D en plâtre peinture » = 4 entrées Mur - A, Mur - B, Mur - C, Mur - D.
+« l'embrasure de la fenêtre I en plâtre peinture, l'allège de la fenêtre I en plâtre peinture, la fenêtre un en PVC » = 3 entrées DISTINCTES :
+Embrasure fenêtre - I / Substrat : Plâtre - Revêtement : Peinture ;
+Allège fenêtre - I / Substrat : Plâtre - Revêtement : Peinture ;
+Fenêtre - I / Substrat : PVC.
+Distingue fenêtres, volets, embrasures, allèges, portes, grilles, murs, sols, plafonds, plinthes, poutres. IMPORTANT : le mot « fenêtre » dans « embrasure de la fenêtre I » ou « allège de la fenêtre I » est une référence, PAS un composant Fenêtre supplémentaire. Une seule fenêtre physique I reste UNE seule ligne Fenêtre - I, même si son embrasure et son allège ont chacune leur propre ligne. Ne classe jamais une embrasure ou une allège sous Type Fenêtre. Un volet est distinct de la fenêtre, même avec le même numéro et la même lettre. Si la dictée répète « fenêtre 2 I » avec PVC puis métal peint, signale l’ambiguïté volet/fenêtre dans warnings au lieu de créer silencieusement une deuxième fenêtre identique.
+Corrige les erreurs évidentes de reconnaissance vocale (plaintes -> plinthes, plate -> plâtre, alege -> allège, embrasement -> embrasure dans le contexte d’une fenêtre) sans inventer.
+La liste PIÈCES DE L’ÉTAPE 1 ne contient que la pièce actuellement sélectionnée. Ne produis QUE les composants de cette pièce. Les autres pièces mentionnées dans le discours ne sont pas des composants à ajouter. Une pièce source validée ne peut être recopiée que si la dictée demande explicitement une copie ou une identité ; sinon ne réutilise jamais ses composants. Conserve le niveau de la pièce.
+Pour chaque ligne, Type doit être un libellé comme « Mur - A », « Fenêtre - I », « Plafond » ; Informations contient « Substrat : ... - Revêtement : ... » selon les éléments réellement dictés.
+Ne numérote les composants de même type que s’il y en a plusieurs dans la pièce : une fenêtre = « Fenêtre - C », deux fenêtres = « Fenêtre 1 - C » et « Fenêtre 2 - D ». Même règle pour grilles, volets, portes et placards, avec des familles distinctes pour porte d’entrée, porte de placard et porte de garage. Ne crée jamais de repère de mur non dicté.
+Pour toute indication d’époque « après 1949 », « apres 1949 » ou « supérieur à 1949 », écris impérativement « >1949 » dans Informations. Ne conserve jamais le mot « après » devant une année dans les informations exportées. Conserve exactement les années dictées, notamment 1940 : ne transforme jamais 1940 en 1949. Si aucun revêtement n’est indiqué, omets entièrement « Revêtement : » : ne mets jamais « non précisé », « aucun » ou un revêtement inventé. Si aucune information de substrat ou de revêtement n’est connue, retourne info comme chaîne vide.
+Si un composant est ambigu, ajoute un avertissement et ne lui invente pas de matériaux.
+N'invente JAMAIS de mesures plomb ni de dégradations CREP. Ne fusionne pas les composants.
+Réponds UNIQUEMENT avec un objet JSON : {"components":[{"room":"Salon cuisine","type":"Mur - A","info":"Substrat : Plâtre - Revêtement : Peinture"}],"warnings":[]}.
+La propriété room doit correspondre au nom d'une pièce fournie. Ne renvoie aucun XML.
+PIÈCES DE L'ÉTAPE 1 : """ + roomArray.toString() + "\nDICTÉE :\n" + transcript
             fun valid(raw: String): JSONObject? {
                 val cleaned = raw.trim().replace(Regex("^```(?:json)?\\s*|\\s*```$", RegexOption.IGNORE_CASE), "").trim()
                 val obj = try { JSONObject(cleaned) } catch (_: Exception) { return null }
