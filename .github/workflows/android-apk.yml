@@ -20,7 +20,6 @@ jobs:
       - name: Copier HTML
         run: |
           mkdir -p app/src/main/assets/etape1 app/src/main/assets/etape2
-          cp index.html app/src/main/assets/index.html
           cp etape1/index.html app/src/main/assets/etape1/index.html
           cp etape2/index.html app/src/main/assets/etape2/index.html
       - name: Compiler APK
