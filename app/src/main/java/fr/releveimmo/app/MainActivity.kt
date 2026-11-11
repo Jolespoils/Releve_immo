@@ -3,6 +3,8 @@ package fr.releveimmo.app
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
+import java.io.ByteArrayOutputStream
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
@@ -34,6 +36,7 @@ class MainActivity : Activity() {
     private val permissionCode = 43
     private val saveCode = 44
     private val openXmlCode = 45
+    private val openAudioCode = 46
     private var pendingBytes: ByteArray? = null
     private var recognizer: SpeechRecognizer? = null
     private var listening = false
@@ -211,7 +214,7 @@ Distingue fenêtres, volets, embrasures, allèges, portes, grilles, murs, sols, 
 Corrige les erreurs évidentes de reconnaissance vocale (plaintes -> plinthes, plate -> plâtre, alege -> allège) sans inventer.
 Associe chaque composant à la pièce réellement mentionnée parmi la liste fournie. Conserve le niveau de la pièce.
 Pour chaque ligne, Type doit être un libellé comme « Mur - A », « Fenêtre 1 - I », « Plafond » ; Informations contient « Substrat : ... - Revêtement : ... » selon les éléments réellement dictés.
-Respecte les indications d'époque >1949, après 1949, 1940 telles qu'elles sont dictées, sans transformer 1940 en 1949.
+Pour toute indication d’époque « après 1949 », « apres 1949 » ou « supérieur à 1949 », écris impérativement « >1949 » dans Informations. Ne conserve jamais le mot « après » devant une année dans les informations exportées. Conserve exactement les années dictées, notamment 1940 : ne transforme jamais 1940 en 1949. Si aucun revêtement n’est indiqué, omets entièrement « Revêtement : » : ne mets jamais « non précisé », « aucun » ou un revêtement inventé. Si aucune information de substrat ou de revêtement n’est connue, retourne info comme chaîne vide.
 Si un composant est ambigu, ajoute un avertissement et ne lui invente pas de matériaux.
 N'invente JAMAIS de mesures plomb ni de dégradations CREP. Ne fusionne pas les composants.
 Réponds UNIQUEMENT avec un objet JSON : {"components":[{"room":"Salon cuisine","type":"Mur - A","info":"Substrat : Plâtre - Revêtement : Peinture"}],"warnings":[]}.
@@ -347,7 +350,79 @@ PIÈCES DE L'ÉTAPE 1 : """ + roomArray.toString() + "\nDICTÉE :\n" + transcrip
         }.start()
     }
 
+    // Analyseur audio supplémentaire : ne modifie pas SpeechRecognizer.
+    private fun transcribeGroqAudio(uri: Uri) {
+        Thread {
+            var conn: HttpURLConnection? = null
+            try {
+                val key = loadProviderKey("groq")
+                if (key.isBlank()) throw IllegalStateException("Clé Groq absente : enregistre-la à l'étape 1.")
+                val filename = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+                    if (it.moveToFirst()) it.getString(0) else null
+                } ?: "audio.m4a"
+                val ext = filename.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                if (ext !in setOf("mp3", "mp4", "mpeg", "mpga", "m4a", "wav", "webm", "ogg", "flac"))
+                    throw IllegalStateException("Format audio non reconnu. Utilise MP3, M4A ou WAV.")
+                callback("releveAudioProgress", JSONObject.quote("Lecture du fichier audio…"))
+                val bytes = contentResolver.openInputStream(uri)?.use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > 24_000_000)
+                            throw IllegalStateException("Fichier trop volumineux : maximum 24 Mo.")
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                } ?: throw IllegalStateException("Impossible de lire l'audio.")
+                if (bytes.isEmpty()) throw IllegalStateException("Le fichier audio est vide.")
+                val boundary = "ReleveImmo" + System.currentTimeMillis()
+                conn = URL("https://api.groq.com/openai/v1/audio/transcriptions").openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.doOutput = true
+                conn.connectTimeout = 15000
+                conn.readTimeout = 180000
+                conn.setRequestProperty("Authorization", "Bearer $key")
+                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                callback("releveAudioProgress", JSONObject.quote("Whisper Large V3 : transcription en cours…"))
+                conn.outputStream.use { out ->
+                    fun field(name: String, value: String) {
+                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray(Charsets.UTF_8))
+                    }
+                    field("model", "whisper-large-v3")
+                    field("language", "fr")
+                    field("response_format", "json")
+                    field("prompt", "Visite de diagnostic immobilier. Murs A B C D E F G H I J. Fenêtre 1 I, volet, embrasure, allège, substrat, revêtement, plâtre, peinture, CREP, Liciel.")
+                    out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.$ext\"\r\nContent-Type: application/octet-stream\r\n\r\n".toByteArray(Charsets.UTF_8))
+                    out.write(bytes)
+                    out.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+                }
+                val code = conn.responseCode
+                val response = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) throw IllegalStateException("Groq HTTP $code : ${response.take(180)}")
+                val transcript = JSONObject(response).optString("text").trim()
+                if (transcript.isBlank()) throw IllegalStateException("Aucun texte reconnu dans l'audio.")
+                callback("releveAudioResult", JSONObject.quote(transcript))
+            } catch (e: Exception) {
+                callback("releveAudioError", JSONObject.quote(e.message ?: "Échec de la transcription"))
+            } finally { conn?.disconnect() }
+        }.start()
+    }
+
     inner class Bridge {
+        @JavascriptInterface fun importAudio() {
+            runOnUiThread {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "audio/*"
+                }
+                try { startActivityForResult(intent, openAudioCode) }
+                catch (_: Exception) { callback("releveAudioError", JSONObject.quote("Sélection audio indisponible")) }
+            }
+        }
+
         @JavascriptInterface fun analyzeStep2(transcript: String, roomsJson: String) = analyzeStep2Native(transcript, roomsJson)
         @JavascriptInterface fun start() {
             runOnUiThread {
@@ -677,6 +752,11 @@ PIÈCES DE L'ÉTAPE 1 : """ + roomArray.toString() + "\nDICTÉE :\n" + transcrip
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == openAudioCode) {
+            if (resultCode == RESULT_OK && data?.data != null) transcribeGroqAudio(data.data!!)
+            else callback("releveAudioProgress", JSONObject.quote("Importation annulée"))
+            return
+        }
         if (requestCode == openXmlCode) {
             if (resultCode == RESULT_OK && data?.data != null) {
                 try {
