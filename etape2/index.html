@@ -93,6 +93,7 @@ function normalizeComponentType(value){
   let t=String(value||'').trim().replace(/\s+/g,' ');
   t=t.replace(/^(Fenêtre|Volet|Porte(?: d['’]entrée| de placard| de garage)?|Placard|Grille|Poutre)\s*-\s*(\d+)\b/i,'$1 $2');
   t=t.replace(/^(Fenêtre|Volet|Porte(?: d['’]entrée| de placard| de garage)?|Placard|Grille|Poutre)\s+(\d+)\s+([A-J])$/i,'$1 $2 - $3');
+  t=t.replace(/^Sol\s+\d+$/i,'Sol');
   t=t.replace(/^Porte\s+d['’]entrée/i,"Porte d'entrée");
   t=t.replace(/^Porte\s+de\s+placard/i,'Porte de placard');
   t=t.replace(/^Porte\s+de\s+garage/i,'Porte de garage');
@@ -128,6 +129,7 @@ function normalizeRoomNumbering(items){
 }
 function normalizeComponentInfo(value){
   let t=licielInfo(value);
+  t=t.replace(/\b(parqu[ée])\b/gi,'Parquet');
   // Une date de substrat ne doit jamais être attribuée à la peinture.
   t=t.replace(/(Revêtement\s*:\s*[^-]+?)\s*-?\s*(>\s*\d{2,4})\b/gi,(full,coat,date)=>{
     if(!/Substrat\s*:/i.test(t))return full;
@@ -169,12 +171,12 @@ function componentsFromDictation(raw){
   const knownRooms=rooms.map(r=>({name:r.name,floor:r.floor}));
   function add(type,info){if(!place){warnings.push('Localisation manquante pour '+type);return}const r=step2Blank();r.Localistion=(floor?floor+' - ':'')+place;r.Type=normalizeComponentType(type);r.Informations=normalizeComponentInfo(info);out.push(r)}
   function infoFor(t){const n=norm2(t);let substrate='',coat='';
-    const substrateMatch=n.match(/(?:substrat\s*:\s*)?(placoplatre|placo|platre|plate|beton|parquet|carrelage|bois|pvc|metal|pierre)/);
-    if(substrateMatch){substrate=({'placo':'placoplâtre','placoplatre':'placoplâtre','plate':'Plâtre','platre':'Plâtre','beton':'Béton','bois':'Bois','metal':'Métal','pierre':'Pierre','parquet':'Parquet','carrelage':'Carrelage','pvc':'PVC'})[substrateMatch[1]]||substrateMatch[1]}
+    const substrateMatch=n.match(/(?:substrat\s*:\s*)?(placoplatre|placo|platre|plate|beton|parquet|parque|carrelage|bois|pvc|metal|pierre)/);
+    if(substrateMatch){substrate=({'placo':'placoplâtre','placoplatre':'placoplâtre','plate':'Plâtre','platre':'Plâtre','beton':'Béton','bois':'Bois','metal':'Métal','pierre':'Pierre','parquet':'Parquet','parque':'Parquet','carrelage':'Carrelage','pvc':'PVC'})[substrateMatch[1]]||substrateMatch[1]}
     const yr=n.match(/(?:superieur a|apres|>\s*)(1949|1940|49|40)/);if(yr&&substrate){substrate+=' >'+(yr[1]==='49'?'1949':yr[1]==='40'?'1940':yr[1]);if(yr[1]==='1940'||yr[1]==='40')warnings.push('Année 1940 à vérifier : '+t.slice(0,65))}
     if(/peinture/.test(n))coat='Peinture';else if(/revetement\s*:\s*carrelage|carrelage\s+(?:du|sur)\s+mur/.test(n))coat='Carrelage';
     else if(/carrelage/.test(n)&&substrate!=='Carrelage')coat='Carrelage';
-    if(/parquet/.test(n)&&substrate!=='Parquet'&&!coat)coat='Parquet';
+    if(/parquet|\bparque\b/.test(n)&&substrate!=='Parquet'&&!coat)coat='Parquet';
     return [substrate?'Substrat : '+substrate:'',coat?'Revêtement : '+coat:''].filter(Boolean).join(' - ')
   }
   function letters(text){const n=norm2(text).replace(/\b([a-j])\s*,\s*(?=[a-j]\b)/g,'$1 ');const compact=n.match(/\b([a-j]{2,10})\b/);if(compact)return [...compact[1].toUpperCase()];const m=n.match(/\b(?:murs?|alle?ges?|embrasures?)\s+(?:a|en|de|du|avec|a\s+)?\s*((?:[a-j]\s*[, ]\s*){2,10})\b/);if(m)return [...m[1].matchAll(/[a-j]/g)].map(x=>x[0].toUpperCase());return []}
