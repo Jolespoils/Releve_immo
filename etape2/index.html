@@ -143,11 +143,20 @@ function referenceRoomsForAI(){
     components:p.items.map(x=>({type:x.Type,info:x.Informations}))}))
     .filter((x,i)=>i!==selectedPiece&&x.validated&&x.components.length);
 }
-function referenceContext(){
-  const refs=referenceRoomsForAI();
+function referenceContext(raw){
+  // Une référence n'est envoyée que pour une demande explicite de copie/comparaison.
+  const intent=/(?:identique(?:s)?\s+(?:à|au|aux|a|que)|même(?:s)?\s+(?:composants?|choses?|éléments?|description)\s+que|copie(?:r|z)?\s+(?:les?\s+)?composants?\s+(?:de|du|des)|reprend(?:re)?\s+(?:les?\s+)?composants?\s+(?:de|du|des))/i;
+  if(!intent.test(raw))return '';
+  const normalized=s=>String(s).toLocaleLowerCase('fr').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[’]/g,"'");
+  const source=normalized(raw);
+  const refs=referenceRoomsForAI().filter(r=>{
+    const name=normalized(r.name);
+    return name.length>1 && new RegExp('(^|[^a-z0-9])'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?=$|[^a-z0-9])').test(source);
+  });
   if(!refs.length)return '';
-  return '\n\nCOMPOSANTS DÉJÀ VALIDÉS DANS LES AUTRES PIÈCES (références uniquement, ne pas les ajouter à la pièce courante sauf demande explicite de copie) :\n'+JSON.stringify(refs);
+  return '\n\nPIÈCES SOURCES EXPRESSÉMENT CITÉES (ne copier que si la dictée le demande, appliquer les exceptions) :\n'+JSON.stringify(refs);
 }
+
 function drawStep2(){normalizeRoomNumbering(step2Items);const root=$('components');root.replaceChildren();step2Items.forEach((r,i)=>{const card=document.createElement('div');card.className='room';const title=document.createElement('strong');title.textContent='Composant '+(i+1);card.append(title);for(const [field,label] of [['Localistion','Localisation (niveau - pièce)'],['Type','Type (Sol, Mur - A, Plafond…)'],['Informations','Informations (substrat, revêtement…)']]){const l=document.createElement('label');l.textContent=label;const input=document.createElement('input');input.value=field==='Informations'?normalizeComponentInfo(r[field]):(r[field]||'');input.oninput=()=>{r[field]=field==='Informations'?normalizeComponentInfo(input.value):field==='Type'?normalizeComponentType(input.value):input.value;markDirty();};card.append(l,input)}const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Autres champs Liciel';details.append(summary);for(const field of step2Fields.filter(x=>!['Localistion','Type','Informations'].includes(x))){const l=document.createElement('label');l.textContent=field;const input=document.createElement('input');input.value=r[field]||'';input.oninput=()=>{r[field]=input.value;markDirty();};details.append(l,input)}card.append(details);const del=document.createElement('button');del.textContent='Supprimer ce composant';del.className='delete-component';del.onclick=()=>{step2Items.splice(i,1);markDirty();drawStep2()};card.append(del);root.append(card)})}
 $('addcomponent').onclick=()=>{const item=step2Blank();item.Localistion=roomLocation(selectedPiece);step2Items.push(item);markDirty();drawStep2()};
 
@@ -236,7 +245,7 @@ $('parse2').onclick=()=>{
   if(window.AndroidAI&&typeof window.AndroidAI.analyzeStep2==='function'){
     step2Analyzing=true;$('parse2').disabled=true;
     $('parse2status').textContent='Recherche des IA disponibles…';
-    try{window.AndroidAI.analyzeStep2('Dans '+rooms[selectedPiece].name+', '+raw+referenceContext(),JSON.stringify([rooms[selectedPiece]]));}
+    try{window.AndroidAI.analyzeStep2('Dans '+rooms[selectedPiece].name+', '+raw+referenceContext(raw),JSON.stringify([rooms[selectedPiece]]));}
     catch(e){localFallback('appel Android impossible');}
   }else{
     localFallback('Version Android sans module IA pour l’étape 2');
