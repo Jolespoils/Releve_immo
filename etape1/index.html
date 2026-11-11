@@ -1,5 +1,5 @@
 <!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relevé Immo — Étape 1</title><style>body{font-family:system-ui;background:#f3f6fa;color:#142338;margin:0;padding:20px}main{max-width:700px;margin:auto}section{background:white;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 12px #0001}button{border:0;background:#124a85;color:white;border-radius:10px;padding:12px;margin:4px;cursor:pointer}button:disabled{opacity:.45}textarea{width:100%;min-height:140px;box-sizing:border-box;padding:12px;font:inherit}input{font:inherit;padding:8px}li{margin:8px 0}.muted{color:#667}small{display:block}h1{margin-bottom:0}.danger-key{background:#8d3030}.key-status{font-weight:600}.key-status.saved{color:#16803c}.key-status.missing{color:#667}</style><main><h1>🏠 Relevé Immo</h1><p class="muted">Relevé des pièces — sans mesure</p>
-<section><h2>1. Dictée de la visite</h2><p>Parle normalement. Le texte s'ajoute au fur et à mesure ; tu arrêtes quand tu le décides.</p><button id="mic">🎙️ Démarrer la dictée</button><button id="stop" disabled>■ Arrêter la dictée</button><small id="status">Prêt à dicter.</small><textarea id="speech" placeholder="On entre dans le salon. À l'étage, deux chambres. Les combles ne sont pas accessibles car il n'y a pas de trappe ; il faudrait en créer une."></textarea><button id="parse">Analyser la visite</button></section>
+<section><h2>1. Dictée de la visite</h2><p>Parle normalement. Le texte s'ajoute au fur et à mesure ; tu arrêtes quand tu le décides.</p><button id="mic">🎙️ Démarrer la dictée</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button><button id="stop" disabled>■ Arrêter la dictée</button><small id="status">Prêt à dicter.</small><textarea id="speech" placeholder="On entre dans le salon. À l'étage, deux chambres. Les combles ne sont pas accessibles car il n'y a pas de trappe ; il faudrait en créer une."></textarea><button id="parse">Analyser la visite</button></section>
 <section><h2>Analyse intelligente (facultative)</h2><p class="muted">Sans clé ou sans connexion, l'analyse locale reste disponible. Avec Gemini, le texte de la visite est envoyé à Google pour analyse. L'offre gratuite est soumise à des quotas et aux conditions de confidentialité de Google.</p><label for="geminikey">Clé API Gemini personnelle</label><input id="geminikey" type="password" autocomplete="off" placeholder="Saisir la clé API Gemini" style="width:100%;box-sizing:border-box"><button id="savekey">💾 Enregistrer la clé</button><button id="delkey" class="danger-key">🗑️ Effacer la clé</button><div id="providerkeys"></div><small id="aistatus">Analyse locale disponible.</small><div id="aiprogress" style="display:none;border:1px solid #d8e1ec;border-radius:10px;padding:10px;margin:10px 0"><strong>Suivi des modèles IA</strong><div id="aitimer">Temps écoulé : 00:00</div><div id="ailog" role="log" aria-live="polite" style="white-space:pre-wrap;font-size:.9em;max-height:200px;overflow:auto"></div><button id="aicancel" style="background:#8d3030">Annuler l’analyse</button></div><button id="ai">✨ Analyser avec l’IA</button><p class="muted">Ordre : Gemini, Groq, OpenRouter, puis analyse locale si aucun fournisseur ne réussit. Vérifie toujours le résultat.</p></section>
 <section><h2>2. Pièces reconnues — vérification</h2><p class="muted">Vérifie et corrige les résultats avant l'export. Les niveaux et motifs peuvent être différents pour chaque pièce.</p><ol id="rooms"></ol><button id="add">+ Ajouter une pièce</button><button id="clearrooms" style="background:#8d3030">Supprimer toutes les pièces</button></section>
 <section><h2>3. Exporter vers Liciel</h2><button id="xml">Exporter XML Liciel</button><button id="csv">Exporter CSV</button><button id="json">Exporter JSON</button><button id="txt">Exporter TXT</button><p class="muted">Le fichier XML conserve les champs de l'exemple Liciel. L'analyse locale du discours est indicative : vérifie les pièces avant l'export.</p></section>
@@ -134,4 +134,30 @@ window.releveNativeXmlImported=base64=>{const binary=atob(base64);readXmlBytes(U
 $('nextstep').onclick=()=>{if(!step1Saved)return;const payload=encodeURIComponent(JSON.stringify({rooms,keys}));location.href='../etape2/index.html#'+payload;};
 // Si l'utilisateur modifie une pièce après l'export, il doit la sauvegarder à nouveau.
 $('rooms').addEventListener('input',()=>{if(step1Saved){step1Saved=false;$('nextstep').disabled=true;$('exportguard').textContent='Pièces modifiées : exporte à nouveau le XML.'}});
+
+// Transcription audio en ligne indépendante de la dictée Android existante.
+let audioImportRunning=false;
+$('importaudio').onclick=()=>{
+  if(audioImportRunning)return;
+  if(!window.AndroidAI || typeof window.AndroidAI.importAudio!=='function'){
+    $('status').textContent='Import audio disponible uniquement dans la nouvelle APK Android.';return;
+  }
+  audioImportRunning=true;$('importaudio').disabled=true;
+  $('status').textContent='Choisis un fichier MP3, M4A ou WAV.';
+  try{window.AndroidAI.importAudio();}catch(e){window.releveAudioError('Impossible de sélectionner le fichier.');}
+};
+window.releveAudioProgress=message=>{
+  $('status').textContent=message;
+  if(/annulée/i.test(message)){audioImportRunning=false;$('importaudio').disabled=false;}
+};
+window.releveAudioResult=text=>{
+  audioImportRunning=false;$('importaudio').disabled=false;
+  const field=$('speech');
+  field.value+=(field.value.trim()?'\n':'')+text;
+  $('status').textContent='Transcription terminée. Vérifie le texte puis lance l’analyse habituelle.';
+};
+window.releveAudioError=message=>{
+  audioImportRunning=false;$('importaudio').disabled=false;
+  $('status').textContent='Audio : '+message;
+};
 </script></html>
