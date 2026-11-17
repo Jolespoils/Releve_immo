@@ -1,0 +1,1 @@
+(function(){const map={parametres:'geminikey',importxml:'importxml',xml:'xml',geminikey:'geminikey'};const id=map[location.hash.slice(1)];if(id){setTimeout(()=>{const el=document.getElementById(id);if(el){el.scrollIntoView({behavior:'smooth',block:'center'});if(id==='importxml')el.click();}},100)}})();
