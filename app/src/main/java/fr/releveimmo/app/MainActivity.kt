@@ -55,7 +55,7 @@ class MainActivity : Activity() {
         web.addJavascriptInterface(bridge, "AndroidFiles")
         web.addJavascriptInterface(bridge, "AndroidAI")
         setContentView(web)
-        web.loadUrl("file:///android_asset/etape1/index.html")
+        web.loadUrl("file:///android_asset/accueil/index.html")
     }
 
     private val keyAlias = "releve_immo_gemini_key"
