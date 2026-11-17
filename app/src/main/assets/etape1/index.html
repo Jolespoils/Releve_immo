@@ -188,7 +188,7 @@ window.releveAudioError=message=>{
 </script><script src="../shared/draft.js"></script><script src="../shared/navigation.js"></script><script id="ri-v2-guided">
 /* Navigation de présentation uniquement : ne touche pas aux règles métier. */
 (function(){
-const stages=['Dictée','Analyse IA','Pièces','Exports','Étape 2'];
+const stages=['Dictée','Analyse IA','Pièces','Exports','Validation'];
 const main=document.querySelector('main');
 if(!main)return;
 const sections=Array.from(main.children).filter(x=>x.tagName==='SECTION');
@@ -202,10 +202,15 @@ main.appendChild(actions);
 let current=0;
 const tabs=document.getElementById('ri-steps');
 stages.forEach((label,i)=>{const b=document.createElement('button');b.type='button';b.textContent=(i+1)+' · '+label;b.addEventListener('click',()=>show(i));tabs.appendChild(b)});
-function show(i){current=Math.max(0,Math.min(stages.length-1,i));document.body.classList.add('ri-guided');for(let j=0;j<stages.length;j++)document.body.classList.toggle('ri-stage-'+j,j===current);Array.from(tabs.children).forEach((b,j)=>b.classList.toggle('active',j===current));document.getElementById('ri-progress').textContent='Étape '+(current+1)+' sur '+stages.length+' — Modifiable à tout moment';document.getElementById('ri-prev').disabled=current===0;document.getElementById('ri-next').textContent=current===stages.length-1?'Retour aux pièces':'Suivant →';window.scrollTo(0,0)}
+function show(i){current=Math.max(0,Math.min(stages.length-1,i));document.body.classList.add('ri-guided');for(let j=0;j<stages.length;j++)document.body.classList.toggle('ri-stage-'+j,j===current);Array.from(tabs.children).forEach((b,j)=>b.classList.toggle('active',j===current));document.getElementById('ri-progress').textContent='Étape '+(current+1)+' sur '+stages.length+' — Modifiable à tout moment';document.getElementById('ri-prev').disabled=current===0;document.getElementById('ri-next').textContent=current===stages.length-1?'Ouvrir l’étape 2 →':'Suivant →';window.scrollTo(0,0)}
 document.getElementById('ri-prev').onclick=()=>show(current-1);
 document.getElementById('ri-return').onclick=()=>{if(current===0)location.href='../accueil/index.html';else show(current-1)};
-document.getElementById('ri-next').onclick=()=>show(current===stages.length-1?2:current+1);
+document.getElementById('ri-next').onclick=()=>{
+ if(current!==stages.length-1){show(current+1);return;}
+ const realNext=document.getElementById('nextstep');
+ if(realNext && !realNext.disabled){window.releveSaveDraft?.();realNext.click();}
+ else{document.getElementById('exportguard').textContent='Exporte ou importe d’abord le XML de l’étape 1 pour poursuivre.';}
+};
 show(0);
 })();
 </script></html>
