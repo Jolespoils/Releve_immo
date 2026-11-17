@@ -352,13 +352,14 @@ PIÈCES DE L'ÉTAPE 1 : """ + roomArray.toString() + "\nDICTÉE :\n" + transcrip
         }.start()
     }
 
-    // Analyseur audio supplémentaire : ne modifie pas SpeechRecognizer.
+    // Import audio indépendant de la dictée en direct et de l'analyse des composants.
+    // Les horodatages servent à repérer certaines transcriptions tronquées ; ils ne
+    // permettent pas de garantir que chaque phrase a été reconnue.
     private fun transcribeGroqAudio(uri: Uri) {
         Thread {
-            var conn: HttpURLConnection? = null
             try {
                 val key = loadProviderKey("groq")
-                if (key.isBlank()) throw IllegalStateException("Clé Groq absente : enregistre-la à l'étape 1.")
+                if (key.isBlank()) throw IllegalStateException("Clé Groq absente : configure-la dans les paramètres IA.")
                 val filename = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                     if (it.moveToFirst()) it.getString(0) else null
                 } ?: "audio.m4a"
@@ -379,37 +380,72 @@ PIÈCES DE L'ÉTAPE 1 : """ + roomArray.toString() + "\nDICTÉE :\n" + transcrip
                     output.toByteArray()
                 } ?: throw IllegalStateException("Impossible de lire l'audio.")
                 if (bytes.isEmpty()) throw IllegalStateException("Le fichier audio est vide.")
-                val boundary = "ReleveImmo" + System.currentTimeMillis()
-                conn = URL("https://api.groq.com/openai/v1/audio/transcriptions").openConnection() as HttpURLConnection
-                conn.requestMethod = "POST"
-                conn.doOutput = true
-                conn.connectTimeout = 15000
-                conn.readTimeout = 180000
-                conn.setRequestProperty("Authorization", "Bearer $key")
-                conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                callback("releveAudioProgress", JSONObject.quote("Whisper Large V3 : transcription en cours…"))
-                conn.outputStream.use { out ->
-                    fun field(name: String, value: String) {
-                        out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray(Charsets.UTF_8))
+
+                data class Transcript(val text: String, val duration: Double, val firstStart: Double, val lastEnd: Double)
+                fun request(model: String): Transcript {
+                    val boundary = "ReleveImmo" + System.nanoTime()
+                    val conn = URL("https://api.groq.com/openai/v1/audio/transcriptions").openConnection() as HttpURLConnection
+                    try {
+                        conn.requestMethod = "POST"
+                        conn.doOutput = true
+                        conn.connectTimeout = 15000
+                        conn.readTimeout = 180000
+                        conn.setRequestProperty("Authorization", "Bearer $key")
+                        conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                        conn.outputStream.use { out ->
+                            fun field(name: String, value: String) {
+                                out.write("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"\r\n\r\n$value\r\n".toByteArray(Charsets.UTF_8))
+                            }
+                            field("model", model)
+                            field("language", "fr")
+                            field("response_format", "verbose_json")
+                            field("temperature", "0")
+                            field("prompt", "Diagnostic immobilier français : WC, sol, carrelage, murs A B C D, mur avec allège, plâtre, peinture, plafond, placoplâtre, plinthes, fenêtre, grille, porte d'entrée, supérieur à 1949.")
+                            out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.$ext\"\r\nContent-Type: application/octet-stream\r\n\r\n".toByteArray(Charsets.UTF_8))
+                            out.write(bytes)
+                            out.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
+                        }
+                        val code = conn.responseCode
+                        val response = (if (code in 200..299) conn.inputStream else conn.errorStream)
+                            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) throw IllegalStateException("Groq HTTP $code : ${response.take(180)}")
+                        val json = JSONObject(response)
+                        val transcript = json.optString("text").trim()
+                        if (transcript.isBlank()) throw IllegalStateException("Aucun texte reconnu dans l'audio.")
+                        val segments = json.optJSONArray("segments")
+                        val first = if (segments != null && segments.length() > 0)
+                            segments.optJSONObject(0)?.optDouble("start", -1.0) ?: -1.0 else -1.0
+                        val last = if (segments != null && segments.length() > 0)
+                            segments.optJSONObject(segments.length() - 1)?.optDouble("end", -1.0) ?: -1.0 else -1.0
+                        return Transcript(transcript, json.optDouble("duration", -1.0), first, last)
+                    } finally {
+                        conn.disconnect()
                     }
-                    field("model", "whisper-large-v3")
-                    field("language", "fr")
-                    field("response_format", "json")
-                    field("prompt", "Visite de diagnostic immobilier. Murs A B C D E F G H I J. Fenêtre 1 I, volet, embrasure, allège fenêtre, mur avec allège, sol béton, sol parquet, substrat, revêtement, plâtre, peinture, CREP, Liciel.")
-                    out.write("--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.$ext\"\r\nContent-Type: application/octet-stream\r\n\r\n".toByteArray(Charsets.UTF_8))
-                    out.write(bytes)
-                    out.write("\r\n--$boundary--\r\n".toByteArray(Charsets.UTF_8))
                 }
-                val code = conn.responseCode
-                val response = (if (code in 200..299) conn.inputStream else conn.errorStream)
-                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) throw IllegalStateException("Groq HTTP $code : ${response.take(180)}")
-                val transcript = JSONObject(response).optString("text").trim()
-                if (transcript.isBlank()) throw IllegalStateException("Aucun texte reconnu dans l'audio.")
-                callback("releveAudioResult", JSONObject.quote(transcript))
+
+                fun suspicious(t: Transcript): Boolean =
+                    t.firstStart >= 5.0 ||
+                    (t.duration > 20.0 && t.lastEnd >= 0.0 && t.lastEnd < t.duration * 0.65) ||
+                    (t.duration > 20.0 && t.text.length < 50)
+
+                callback("releveAudioProgress", JSONObject.quote("Whisper : transcription et contrôle de couverture…"))
+                var result = request("whisper-large-v3")
+                if (suspicious(result)) {
+                    callback("releveAudioProgress", JSONObject.quote("Transcription potentiellement incomplète : deuxième essai…"))
+                    try {
+                        val second = request("whisper-large-v3-turbo")
+                        if (second.text.length > result.text.length) result = second
+                    } catch (_: Exception) {
+                        // Conserver le premier résultat si la seconde tentative échoue.
+                    }
+                }
+                if (suspicious(result)) {
+                    callback("releveAudioProgress", JSONObject.quote("Attention : vérifie la transcription, elle peut être incomplète."))
+                }
+                callback("releveAudioResult", JSONObject.quote(result.text))
             } catch (e: Exception) {
                 callback("releveAudioError", JSONObject.quote(e.message ?: "Échec de la transcription"))
-            } finally { conn?.disconnect() }
+            }
         }.start()
     }
 
