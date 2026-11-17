@@ -1,1 +1,33 @@
-<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="../shared/theme.css"><main><nav class="topbar"><a class="back-link" href="index.html">← Accueil</a></nav><h1>Mes relevés</h1><section><h2>Brouillon local</h2><p id="info">Aucun brouillon enregistré sur cet appareil.</p><a class="back-link" href="../etape1/index.html">Ouvrir et modifier le relevé →</a></section></main><script>try{let d=JSON.parse(localStorage.getItem('releve_immo_draft_v2')||'null');if(d)document.getElementById('info').textContent=(d.rooms||[]).length+' pièce(s) · Dernière sauvegarde : '+new Date(d.updated).toLocaleString('fr-FR')}catch(e){}</script></html>
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Relevé Immo — Mes relevés</title><link rel="stylesheet" href="../shared/theme.css"><style>
+body{margin:0;min-height:100vh;background:linear-gradient(#071b31d9,#071b31ed),url('salon.jpg') center/cover fixed;color:#fff;font-family:system-ui,sans-serif}main{max-width:720px;margin:auto;padding:20px 16px 80px}.back{display:inline-block;color:#fff;text-decoration:none;background:#ffffff25;border:1px solid #ffffff55;border-radius:13px;padding:12px 16px}h1{font-size:2rem;margin:30px 0 6px}p.intro{color:#d9eaff}article{background:#f8fbfff5;color:#142842;border-radius:20px;padding:19px;margin:15px 0;box-shadow:0 10px 30px #0004}article h2{margin:0 0 9px;font-size:1.25rem}article p{line-height:1.5;color:#41536b}button{border:0;border-radius:12px;background:linear-gradient(120deg,#159dec,#064da9);color:#fff;font:inherit;font-weight:700;padding:13px 17px;min-height:46px;cursor:pointer}button:disabled{opacity:.5}#message{color:#fff3b4}#empty{padding:25px;background:#ffffff1c;border-radius:18px}small{color:#62758b}
+</style></head><body><main><a class="back" href="index.html">← Accueil</a><h1>Mes relevés</h1><p class="intro">Retrouve ton chantier en cours et tes relevés archivés. Les données restent sur cet appareil.</p><div id="message" role="status"></div><div id="entries"></div><p id="empty" hidden>Aucun relevé enregistré pour le moment.</p></main><script>
+(function(){'use strict';
+const KEY='releve_immo_draft_v2',ARCHIVES='releve_immo_archives_v1',STEP2='releve_immo_etape2_pieces_v1';
+const entries=document.getElementById('entries'),message=document.getElementById('message');
+function getJSON(key,fallback){try{const x=JSON.parse(localStorage.getItem(key)||'null');return x===null?fallback:x}catch(e){message.textContent='Certaines sauvegardes sont illisibles. Elles n’ont pas été supprimées.';return fallback}}
+function summary(d){if(!d)return 'Composants enregistrés sans brouillon de l’étape 1';const count=Array.isArray(d.rooms)?d.rooms.length:0;const names=(d.rooms||[]).slice(0,3).map(r=>r.name).filter(Boolean).join(', ');return count+' pièce(s)'+(names?' · '+names:'')}
+function date(t){try{return new Date(t).toLocaleString('fr-FR')}catch(e){return 'Date inconnue'}}
+function add(title,description,onOpen){const card=document.createElement('article');const h=document.createElement('h2');h.textContent=title;const p=document.createElement('p');p.textContent=description;const b=document.createElement('button');b.textContent='Ouvrir et modifier';b.onclick=onOpen;card.append(h,p,b);entries.append(card)}
+const current=getJSON(KEY,null),step2=localStorage.getItem(STEP2),archives=getJSON(ARCHIVES,[]);
+if(current||step2)add('Chantier en cours',summary(current)+(current?.updated?' · '+date(current.updated):''),()=>location.href='../etape1/index.html');
+if(Array.isArray(archives))archives.slice().reverse().forEach((a,reverseIndex)=>{
+ const i=archives.length-1-reverseIndex;let draft=null;try{draft=a.draft?JSON.parse(a.draft):null}catch(e){}
+ add('Relevé archivé · '+date(a.savedAt),summary(draft),()=>{
+   if(!confirm('Ouvrir ce relevé archivé ? Le chantier en cours sera archivé automatiquement avant restauration.'))return;
+   try{
+     // Écriture des archives en premier : ne jamais remplacer le chantier actuel sans copie.
+     const updated=JSON.parse(localStorage.getItem(ARCHIVES)||'[]');
+     if(!Array.isArray(updated)||!updated[i]||updated[i].id!==a.id)throw Error('Archive modifiée : recharge la page');
+     const oldDraft=localStorage.getItem(KEY),oldStep2=localStorage.getItem(STEP2);
+     if(oldDraft||oldStep2)updated.push({id:Date.now()+'-'+Math.random().toString(36).slice(2),savedAt:Date.now(),draft:oldDraft,step2:oldStep2});
+     // Conserver l'archive sélectionnée pour pouvoir revenir à cet état.
+     localStorage.setItem(ARCHIVES,JSON.stringify(updated));
+     if(a.draft!==null&&a.draft!==undefined)localStorage.setItem(KEY,a.draft);else localStorage.removeItem(KEY);
+     if(a.step2!==null&&a.step2!==undefined)localStorage.setItem(STEP2,a.step2);else localStorage.removeItem(STEP2);
+     location.href='../etape1/index.html';
+   }catch(e){message.textContent='Restauration impossible : '+e.message+' ; les archives sont conservées.'}
+ });
+});
+document.getElementById('empty').hidden=!!entries.children.length;
+})();
+</script></body></html>
