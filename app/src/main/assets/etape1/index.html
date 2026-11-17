@@ -1,85 +1,28 @@
-<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relevé Immo — Étape 1</title><style>body{font-family:system-ui;background:#f3f6fa;color:#142338;margin:0;padding:20px}main{max-width:700px;margin:auto}section{background:white;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 12px #0001}button{border:0;background:#124a85;color:white;border-radius:10px;padding:12px;margin:4px;cursor:pointer}button:disabled{opacity:.45}textarea{width:100%;min-height:140px;box-sizing:border-box;padding:12px;font:inherit}input{font:inherit;padding:8px}li{margin:8px 0}.muted{color:#667}small{display:block}h1{margin-bottom:0}.danger-key{background:#8d3030}.key-status{font-weight:600}.key-status.saved{color:#16803c}.key-status.missing{color:#667}</style><main><nav class="topbar"><a class="back-link" href="../accueil/index.html">← Retour</a><span class="step-label">ÉTAPE 1 / 2 · RELEVÉ IMMO</span></nav><div class="step-track"><span class="done"></span><span class="active"></span><span class=""></span><span></span><span></span></div><h1>🏠 Relevé Immo</h1><p class="muted">Relevé des pièces — sans mesure</p>
-<section><h2>1. Dictée de la visite</h2><p>Parle normalement. Le texte s'ajoute au fur et à mesure ; tu arrêtes quand tu le décides.</p><button id="mic">🎙️ Démarrer la dictée</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button><button id="stop" disabled>■ Arrêter la dictée</button><small id="status">Prêt à dicter.</small><textarea id="speech" placeholder="On entre dans le salon. À l'étage, deux chambres. Les combles ne sont pas accessibles car il n'y a pas de trappe ; il faudrait en créer une."></textarea><button id="parse">Analyser la visite</button></section>
-<section><h2>Analyse intelligente (facultative)</h2><p class="muted">Sans clé ou sans connexion, l'analyse locale reste disponible. Avec Gemini, le texte de la visite est envoyé à Google pour analyse. L'offre gratuite est soumise à des quotas et aux conditions de confidentialité de Google.</p><label for="geminikey">Clé API Gemini personnelle</label><input id="geminikey" type="password" autocomplete="off" placeholder="Saisir la clé API Gemini" style="width:100%;box-sizing:border-box"><button id="savekey">💾 Enregistrer la clé</button><button id="delkey" class="danger-key">🗑️ Effacer la clé</button><div id="providerkeys"></div><small id="aistatus">Analyse locale disponible.</small><div id="aiprogress" style="display:none;border:1px solid #d8e1ec;border-radius:10px;padding:10px;margin:10px 0"><strong>Suivi des modèles IA</strong><div id="aitimer">Temps écoulé : 00:00</div><div id="ailog" role="log" aria-live="polite" style="white-space:pre-wrap;font-size:.9em;max-height:200px;overflow:auto"></div><button id="aicancel" style="background:#8d3030">Annuler l’analyse</button></div><button id="ai">✨ Analyser avec l’IA</button><p class="muted">Ordre : Gemini, Groq, OpenRouter, puis analyse locale si aucun fournisseur ne réussit. Vérifie toujours le résultat.</p></section>
-<section><h2>2. Pièces reconnues — vérification</h2><p class="muted">Vérifie et corrige les résultats avant l'export. Les niveaux et motifs peuvent être différents pour chaque pièce.</p><ol id="rooms"></ol><button id="add">+ Ajouter une pièce</button><button id="clearrooms" style="background:#8d3030">Supprimer toutes les pièces</button></section>
-<section><h2>3. Exporter vers Liciel</h2><button id="xml">Exporter XML Liciel</button><button id="csv">Exporter CSV</button><button id="json">Exporter JSON</button><button id="txt">Exporter TXT</button><p class="muted">Le fichier XML conserve les champs de l'exemple Liciel. L'analyse locale du discours est indicative : vérifie les pièces avant l'export.</p></section>
-<section id="step1gate"><h2>Sauvegarde et étape 2</h2><p id="exportguard" class="muted">Exporte le XML de l’étape 1 pour déverrouiller la suite.</p><button id="importxml">Importer un XML</button><input id="xmlfile" type="file" accept=".xml,text/xml,application/xml" hidden><button id="nextstep" disabled>Passer à l’étape 2 →</button></section>
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>Relevé Immo — Étape 1</title><style>
+:root{color-scheme:dark;--sky:#06b7ff;--blue:#0879e5;--panel:rgba(13,34,58,.91);--line:rgba(157,203,244,.27)}
+html{min-height:100%;background:#071b30}body{margin:0!important;padding:0!important;min-height:100vh;background:linear-gradient(160deg,rgba(5,18,34,.87),rgba(8,31,54,.81)),url('../accueil/salon.jpg') center/cover fixed!important;color:#f1f8ff!important;font:16px/1.5 system-ui,-apple-system,sans-serif!important}
+main{max-width:780px!important;margin:0 auto!important;padding:20px 16px 110px!important;box-sizing:border-box}
+main>.topbar,main>.step-track,main>h1,main>p.muted,main>p:not(.muted){display:none!important}
+.ri-hero{text-align:center;padding:27px 6px 21px}.ri-hero .ri-house{width:55px;height:55px;margin:0 auto 12px;display:grid;place-items:center;border:2px solid #9bdcff;border-radius:17px;background:#0c345a9c;font-size:28px}.ri-hero h1{font-size:clamp(29px,7vw,42px);line-height:1.12;margin:0!important;color:white!important;font-weight:800}.ri-hero h1 span{color:#00baff}.ri-hero p{color:#c3d8e9;margin:10px 0 0;font-size:15px}
+.ri-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:9px}.ri-toolbar a,.ri-toolbar button{border:1px solid #ffffff5c!important;background:#ffffff18!important;border-radius:12px!important;color:#fff!important;padding:9px 13px!important;text-decoration:none;font-size:14px!important;min-height:40px}
+.ri-tabs{display:flex;gap:8px;overflow-x:auto;padding:12px 1px 16px;scrollbar-width:thin}.ri-tabs button{flex:0 0 auto;border:1px solid #81b6e660!important;background:#17334dbb!important;color:#c8d9e8!important;border-radius:15px!important;padding:11px 13px!important;min-height:48px!important;font-size:13px!important;font-weight:700!important}.ri-tabs button.active{background:linear-gradient(130deg,#02b5f4,#0756c7)!important;color:#fff!important;border-color:#25d0ff!important;box-shadow:0 5px 20px #00aaff36}
+.ri-panel{display:none!important;background:var(--panel)!important;border:1px solid var(--line)!important;border-radius:24px!important;padding:clamp(19px,5vw,32px)!important;margin:0 0 18px!important;box-shadow:0 16px 42px #0005!important;backdrop-filter:blur(13px)}.ri-panel.ri-visible{display:block!important}
+.ri-panel h2{font-size:clamp(22px,5vw,28px)!important;line-height:1.22!important;color:#fff!important;margin:0 0 16px!important}.ri-panel h2::before{content:'';display:block;width:48px;height:4px;border-radius:8px;background:#02b8ff;margin:0 0 15px}
+.ri-panel p,.ri-panel small,.ri-panel label,.ri-panel li{color:#d9e7f4!important}.ri-panel label{display:block;font-weight:700;margin:12px 0 6px}
+.ri-panel input:not([type=checkbox]):not([type=radio]),.ri-panel textarea,.ri-panel select{box-sizing:border-box!important;width:100%!important;max-width:100%!important;border-radius:13px!important;background:#f5f9ff!important;color:#142338!important;border:1px solid #9cb5d0!important;padding:14px!important;font-size:16px!important;margin:8px 0 14px!important}
+.ri-panel textarea{min-height:180px!important;resize:vertical}.ri-panel button:not(.ri-tabs button){background:linear-gradient(130deg,#098fe5,#0757b8)!important;color:white!important;border:1px solid #31a9f2!important;border-radius:13px!important;padding:13px 16px!important;margin:5px 6px 5px 0!important;min-height:48px!important;font-weight:650!important;max-width:100%;white-space:normal!important}
+.ri-panel button:disabled{opacity:.43!important;filter:grayscale(.4)}.ri-panel .room,.ri-panel .component,.ri-panel .item{background:#ffffff10!important;border:1px solid #ffffff30!important;border-radius:15px!important;padding:12px!important;margin:12px 0!important}
+.ri-actions{display:flex;gap:12px;margin:17px 0 0}.ri-actions button{flex:1;min-width:0;border:1px solid #47a9ee!important;border-radius:15px!important;background:linear-gradient(130deg,#078de8,#084fba)!important;color:white!important;font-size:16px!important;font-weight:750!important;min-height:54px!important}.ri-actions button:first-child{background:#ffffff19!important;border-color:#ffffff66!important}.ri-actions button:disabled{opacity:.38!important}.ri-footnote{text-align:center;color:#aac9de;font-size:12px;margin:18px 0}
+@media(max-width:430px){main{padding:14px 12px 105px!important}.ri-panel{padding:20px 16px!important}.ri-tabs button{padding:10px 11px!important}.ri-panel button{font-size:14px!important}}
+</style></head><body><main><div class="ri-toolbar"><a href="../accueil/index.html">⌂ Accueil</a><span style="color:#b6d4e8;font-size:13px;font-weight:700">ÉTAPE 1 / 2</span></div><div class="ri-hero"><div class="ri-house">⌂</div><h1>Relevé <span>Immo</span></h1><p>Dictée et vérification des pièces</p></div><div aria-label="Navigation des étapes" class="ri-tabs"></div><nav class="topbar"><a class="back-link" href="../accueil/index.html">← Retour</a><span class="step-label">ÉTAPE 1 / 2 · RELEVÉ IMMO</span></nav><div class="step-track"><span class="done"></span><span class="active"></span><span class=""></span><span></span><span></span></div><h1>🏠 Relevé Immo</h1><p class="muted">Relevé des pièces — sans mesure</p>
+<section class="ri-panel"><h2>1. Dictée de la visite</h2><p>Parle normalement. Le texte s'ajoute au fur et à mesure ; tu arrêtes quand tu le décides.</p><button id="mic">🎙️ Démarrer la dictée</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button><button disabled="" id="stop">■ Arrêter la dictée</button><small id="status">Prêt à dicter.</small><textarea id="speech" placeholder="On entre dans le salon. À l'étage, deux chambres. Les combles ne sont pas accessibles car il n'y a pas de trappe ; il faudrait en créer une."></textarea><button id="parse">Analyser la visite</button></section>
+<section class="ri-panel"><h2>Analyse intelligente (facultative)</h2><p class="muted">Sans clé ou sans connexion, l'analyse locale reste disponible. Avec Gemini, le texte de la visite est envoyé à Google pour analyse. L'offre gratuite est soumise à des quotas et aux conditions de confidentialité de Google.</p><label for="geminikey">Clé API Gemini personnelle</label><input autocomplete="off" id="geminikey" placeholder="Saisir la clé API Gemini" style="width:100%;box-sizing:border-box" type="password"/><button id="savekey">💾 Enregistrer la clé</button><button class="danger-key" id="delkey">🗑️ Effacer la clé</button><div id="providerkeys"></div><small id="aistatus">Analyse locale disponible.</small><div id="aiprogress" style="display:none;border:1px solid #d8e1ec;border-radius:10px;padding:10px;margin:10px 0"><strong>Suivi des modèles IA</strong><div id="aitimer">Temps écoulé : 00:00</div><div aria-live="polite" id="ailog" role="log" style="white-space:pre-wrap;font-size:.9em;max-height:200px;overflow:auto"></div><button id="aicancel" style="background:#8d3030">Annuler l’analyse</button></div><button id="ai">✨ Analyser avec l’IA</button><p class="muted">Ordre : Gemini, Groq, OpenRouter, puis analyse locale si aucun fournisseur ne réussit. Vérifie toujours le résultat.</p></section>
+<section class="ri-panel"><h2>2. Pièces reconnues — vérification</h2><p class="muted">Vérifie et corrige les résultats avant l'export. Les niveaux et motifs peuvent être différents pour chaque pièce.</p><ol id="rooms"></ol><button id="add">+ Ajouter une pièce</button><button id="clearrooms" style="background:#8d3030">Supprimer toutes les pièces</button></section>
+<section class="ri-panel"><h2>3. Exporter vers Liciel</h2><button id="xml">Exporter XML Liciel</button><button id="csv">Exporter CSV</button><button id="json">Exporter JSON</button><button id="txt">Exporter TXT</button><p class="muted">Le fichier XML conserve les champs de l'exemple Liciel. L'analyse locale du discours est indicative : vérifie les pièces avant l'export.</p></section>
+<section class="ri-panel" id="step1gate"><h2>Sauvegarde et étape 2</h2><p class="muted" id="exportguard">Exporte le XML de l’étape 1 pour déverrouiller la suite.</p><button id="importxml">Importer un XML</button><input accept=".xml,text/xml,application/xml" hidden="" id="xmlfile" type="file"/><button disabled="" id="nextstep">Passer à l’étape 2 →</button></section><div class="ri-actions"><button id="ri-back" type="button">← Précédent</button><button id="ri-forward" type="button">Suivant →</button></div><div class="ri-footnote">Les modifications sont conservées localement sur cet appareil.</div>
 </main>
-<style>.room{border-bottom:1px solid #ddd;padding:10px 0}.room label{display:block;margin:7px 0 3px;font-size:.9em}.room input,.room select{width:100%;box-sizing:border-box}.room button{background:#8d3030}.room .fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}@media(max-width:500px){.room .fields{grid-template-columns:1fr}}select{font:inherit;padding:9px}.room textarea{min-height:60px}small{margin:8px 0}</style>
-<link rel="stylesheet" href="../shared/theme.css"><style id="ri-v2-screen">
-/* Interface V2 : le moteur de dictée, les API et les exports restent inchangés. */
-body{background:linear-gradient(160deg,rgba(8,20,40,.78),rgba(14,39,67,.65)),url('../accueil/salon.jpg') center/cover fixed!important;color:#f3f8ff!important;min-height:100vh;padding:0!important;margin:0!important}
-main{max-width:850px!important;margin:0 auto!important;padding:16px 14px 110px!important}
-header{max-width:850px;margin:auto;padding:24px 20px 8px!important;background:transparent!important;color:white!important}
-header h1,header p{color:white!important;text-shadow:0 2px 8px #14253c}
-main>section{background:rgba(244,249,255,.95)!important;color:#152841!important;border:1px solid rgba(255,255,255,.85)!important;border-radius:24px!important;box-shadow:0 18px 55px #04142677!important;padding:23px!important;margin:14px 0!important;backdrop-filter:blur(16px)}
-main>section h2{color:#112a49!important;font-size:1.45rem!important;margin-top:0!important}
-main>section p,.muted{line-height:1.5}
-main button{border-radius:13px!important;padding:12px 17px!important;margin:5px 4px 5px 0!important;min-height:46px;box-shadow:0 3px 8px #0c2b4a20}
-main input,main textarea,main select{border-radius:12px!important;border:1px solid #b7cce2!important;padding:11px!important;max-width:100%;box-sizing:border-box}
-main textarea{min-height:160px}
-.ri-top{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0 14px}
-.ri-top a,.ri-top button{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:white;background:#ffffff22;border:1px solid #ffffff66;border-radius:14px;padding:10px 14px;font-size:.92rem;cursor:pointer}
-.ri-stepper{display:flex;gap:7px;margin:0 0 16px;overflow-x:auto;padding-bottom:5px}
-.ri-stepper button{flex:1;min-width:90px;white-space:nowrap;background:#ffffff24!important;color:#fff!important;border:1px solid #ffffff66!important;border-radius:13px!important;padding:10px 7px!important;font-weight:650;cursor:pointer}
-.ri-stepper button.active{background:linear-gradient(130deg,#12b6ff,#0756c7)!important;border-color:#5cddff!important;box-shadow:0 5px 18px #00aeff55}
-.ri-stepper button:disabled{opacity:.5}
-.ri-progress{color:#d6eaff;font-size:.9rem;margin:4px 0 12px}
-.ri-actions{display:flex;justify-content:space-between;gap:10px;margin-top:18px}
-.ri-actions button{flex:1;border-radius:15px!important;border:1px solid #8ec9ff!important;background:linear-gradient(135deg,#139cf0,#063e9b)!important;color:#fff!important;font-weight:700;padding:14px!important}
-.ri-actions button.secondary{background:#e6f0fc!important;color:#153456!important;border-color:#bfd6ef!important}
-body.ri-guided main>section{display:none!important}
-body.ri-guided.ri-stage-0 main>section:nth-of-type(1),body.ri-guided.ri-stage-1 main>section:nth-of-type(2),body.ri-guided.ri-stage-2 main>section:nth-of-type(3),body.ri-guided.ri-stage-3 main>section:nth-of-type(4),body.ri-guided.ri-stage-4 main>section:nth-of-type(5){display:block!important}
-@media(max-width:520px){header h1{font-size:1.9rem!important}.ri-stepper button{font-size:.77rem;min-width:80px}main>section{padding:18px!important}}
-</style><style id="ri-unified-ui">
-/* Relevé Immo — unified visual layer. Existing JS and IDs remain untouched. */
-:root{color-scheme:dark;--ri-blue:#02b7ff;--ri-blue2:#0953bc;--ri-text:#f5faff;--ri-muted:#b9d0e7}
-html{min-height:100%;background:#06172a}
-body{margin:0!important;padding:0!important;min-height:100vh!important;background:linear-gradient(180deg,rgba(3,17,33,.87),rgba(8,29,51,.80) 45%,rgba(4,18,35,.95)),url('../accueil/salon.jpg') center center/cover fixed!important;color:var(--ri-text)!important;font-family:system-ui,-apple-system,Roboto,sans-serif!important}
-main{width:auto!important;max-width:850px!important;margin:0 auto!important;padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 92px)!important}
-main>.topbar{display:flex!important;align-items:center;justify-content:space-between;gap:12px;margin:0 0 15px;color:#c8e5ff;font-size:12px;letter-spacing:.07em;font-weight:700}
-main>.topbar a{display:inline-flex;align-items:center;min-height:42px;box-sizing:border-box;padding:9px 15px;background:#ffffff1e;color:white!important;text-decoration:none;border:1px solid #ffffff5b;border-radius:14px}
-main>.step-track{display:flex;gap:7px;margin:0 0 28px}
-main>.step-track span{height:5px;flex:1;border-radius:10px;background:#ffffff36}
-main>.step-track span.active{background:#02b7ff;box-shadow:0 0 14px #02b7ff70}
-main>.step-track span.done{background:#80d8ff}
-main>h1{font-size:clamp(29px,8vw,42px)!important;line-height:1.1;letter-spacing:-.035em;margin:0 0 8px!important;color:white!important;text-shadow:0 2px 14px #0008}
-main>p{color:#cce4f7!important;font-size:15px;margin:0 0 23px!important}
-main>section{display:block;background:linear-gradient(145deg,rgba(15,39,66,.96),rgba(12,31,53,.94))!important;color:#f7fbff!important;border:1px solid #77a9d14f!important;border-radius:25px!important;box-shadow:0 14px 48px #0007!important;padding:clamp(18px,5vw,29px)!important;margin:18px 0!important;backdrop-filter:blur(14px)}
-main>section h2{font-size:clamp(22px,6vw,28px)!important;color:white!important;line-height:1.18;margin:4px 0 17px!important;letter-spacing:-.02em}
-main>section p,main>section .muted,main>section small,main>section label{color:#c5daed!important;line-height:1.55}
-main>section p{font-size:15px}
-main>section label{display:block;margin:14px 0 7px;font-weight:650}
-main button,main>section button{appearance:none;min-height:50px;border-radius:14px!important;padding:12px 16px!important;margin:6px 5px 6px 0!important;background:linear-gradient(115deg,#08aefa,#0752b7)!important;border:1px solid #45caff77!important;color:white!important;font:inherit;font-weight:700!important;box-shadow:0 5px 15px #001a3680!important;cursor:pointer;max-width:100%;white-space:normal;text-align:center}
-main button:disabled{opacity:.45!important;box-shadow:none!important;cursor:not-allowed}
-main button:focus-visible,main a:focus-visible,main input:focus-visible,main textarea:focus-visible,main select:focus-visible{outline:3px solid #69d6ff;outline-offset:2px}
-main input,main textarea,main select{background:#f5faff!important;color:#112a48!important;border:1px solid #adc6e0!important;border-radius:14px!important;box-sizing:border-box!important;font:inherit!important;padding:13px!important;max-width:100%;width:100%;min-height:50px}
-main textarea{min-height:165px!important;line-height:1.55;resize:vertical}
-main input[type=file]{min-height:0}
-main .room{background:#16395a!important;border:1px solid #ffffff27!important;border-radius:17px!important;margin:12px 0!important;padding:16px!important;box-shadow:0 6px 22px #0003}
-main .room label,main .room strong{color:#e3f4ff!important}
-main .room details{background:#ffffff12!important;color:#fff!important;border-radius:12px;padding:12px}
-main .room summary{color:#fff!important}
-main .room .fields{gap:10px}
-main .room button,main button.danger-key,main button.delete-component,main #clearrooms,main #stop,main #stop2{background:#8e3149!important;border-color:#d7758c55!important}
-main #mic,main #mic2{min-height:66px;font-size:17px;background:linear-gradient(115deg,#02c4ff,#0757c3)!important}
-main #ai,main #parse,main #parse2,main #xml,main #nextstep,main #exportstep2{background:linear-gradient(110deg,#04aaf1,#0054c5)!important}
-main #aiprogress,main #pieceProgress{background:#ffffff13!important;border:1px solid #ffffff32!important;border-radius:14px;padding:13px;color:#e2f4ff!important}
-main #ailog{color:#d5ebff!important}
-main #providerkeys{overflow-wrap:anywhere}
-main .ri-top{display:flex;gap:10px;justify-content:space-between;align-items:center;margin:15px 0}
-main .ri-top a,main .ri-top button{color:white!important;text-decoration:none;background:#ffffff20!important;border:1px solid #ffffff55!important;border-radius:13px!important;min-height:42px;padding:9px 12px!important;font-size:14px}
-main .ri-stepper{display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin;margin:14px 0 12px;padding:3px 0 10px}
-main .ri-stepper button{flex:0 0 auto;min-width:105px;background:#ffffff18!important;border:1px solid #ffffff52!important;box-shadow:none!important;font-size:13px!important;padding:10px!important;min-height:45px!important}
-main .ri-stepper button.active{background:linear-gradient(115deg,#08b4ff,#0955c0)!important;border-color:#51d4ff!important;box-shadow:0 5px 20px #00a9ff4b!important}
-main .ri-progress{color:#c4dff4;font-size:13px;margin:8px 0 17px}
-main .ri-actions{display:flex;gap:10px;margin:20px 0}
-main .ri-actions button{flex:1;margin:0!important;min-width:0}
-main .ri-actions button.secondary,main #backstep{background:#ffffff1c!important;border:1px solid #ffffff60!important;color:white!important;box-shadow:none!important}
-main #roomstatus,main #step2status,main #parse2status,main #exportguard{color:#c5e2fa!important}
-main #validatePiece{background:linear-gradient(110deg,#087c83,#075e6a)!important}
-@media(max-width:560px){main{padding-left:14px!important;padding-right:14px!important}main>section{padding:20px!important}main>section button{width:100%;margin:5px 0!important}main .ri-stepper button{width:auto!important;margin:0!important;min-width:95px}main .ri-actions button{width:50%!important}main>.topbar{font-size:11px}main .room .fields{grid-template-columns:1fr!important}}
-</style><script>
+<script>
 const $=id=>document.getElementById(id);
 const levels=['Sous-sol','Rez de chaussée','Entresol','1er étage','2e étage','3e étage','4e étage','5e étage','Combles','Grenier','Toiture','Extérieur'];
 let rooms=[], keys=[];
@@ -196,7 +139,7 @@ if(window.AndroidSpeech&&typeof window.AndroidSpeech.start==='function'){$('mic'
 
 // Passage à une page indépendante : transmission des pièces par l'URL locale.
 let pendingStep1Export=false, step1Saved=false;
-function unlockStep2(message){step1Saved=true;$('nextstep').disabled=false;$('exportguard').textContent=message||'XML de l’étape 1 sauvegardé ✓';}
+function unlockStep2(message){step1Saved=true;$('nextstep').disabled=false;$('exportguard').textContent=message||'XML de l’étape 1 sauvegardé ✓';window.releveSaveDraft?.();}
 const previousFileStatus=window.releveNativeFileStatus;
 window.releveNativeFileStatus=message=>{previousFileStatus?.(message);if(pendingStep1Export){pendingStep1Export=false;if(message==='Fichier enregistré')unlockStep2('XML de l’étape 1 enregistré ✓');else $('exportguard').textContent='Export non confirmé : '+message;}};
 function parseImportedXml(text){const doc=new DOMParser().parseFromString(text,'application/xml');if(doc.querySelector('parsererror'))throw Error('XML invalide');if(doc.documentElement.tagName!=='LiTable_General_Pieces_Toutes')throw Error('Ce fichier n’est pas un XML de l’étape 1');const list=[...doc.getElementsByTagName('LiItem_table_General_Pieces_Toutes')];if(!list.length)throw Error('Aucune pièce');rooms=list.map(node=>{const get=k=>node.getElementsByTagName('LiColonne_'+k)[0]?.textContent||'';return {name:get('Local'),floor:get('Batiment')||'Rez de chaussée',justification:get('Justification'),means:get('MoyenAMettreEnOeuvre')}});keys=list.map((node,i)=>node.getElementsByTagName('LiColonne_ClefComposant')[0]?.textContent||newKey(i));render();unlockStep2('XML de l’étape 1 importé ✓');$('status').textContent=rooms.length+' pièces importées';}
@@ -206,7 +149,17 @@ $('xmlfile').onchange=async e=>{const file=e.target.files?.[0];if(file)readXmlBy
 window.releveNativeXmlImported=base64=>{const binary=atob(base64);readXmlBytes(Uint8Array.from(binary,c=>c.charCodeAt(0)))};
 $('nextstep').onclick=()=>{if(!step1Saved)return;const payload=encodeURIComponent(JSON.stringify({rooms,keys}));location.href='../etape2/index.html#'+payload;};
 // Si l'utilisateur modifie une pièce après l'export, il doit la sauvegarder à nouveau.
-$('rooms').addEventListener('input',()=>{if(step1Saved){step1Saved=false;$('nextstep').disabled=true;$('exportguard').textContent='Pièces modifiées : exporte à nouveau le XML.'}});
+function invalidateXml(){
+ if(!step1Saved)return;
+ step1Saved=false;
+ $('nextstep').disabled=true;
+ $('exportguard').textContent='Pièces modifiées : réexporte le XML avant l’étape 2.';
+ window.releveSaveDraft?.();
+}
+$('rooms').addEventListener('input',invalidateXml);
+$('rooms').addEventListener('change',invalidateXml);
+// Toute modification structurelle de la liste des pièces invalide le dernier XML.
+new MutationObserver(invalidateXml).observe($('rooms'),{childList:true,subtree:true});
 
 // Transcription audio en ligne indépendante de la dictée Android existante.
 let audioImportRunning=false;
@@ -233,32 +186,26 @@ window.releveAudioError=message=>{
   audioImportRunning=false;$('importaudio').disabled=false;
   $('status').textContent='Audio : '+message;
 };
-</script><script src="../shared/draft.js"></script><script src="../shared/navigation.js"></script><script id="ri-v2-guided">
-/* Navigation de présentation uniquement : ne touche pas aux règles métier. */
+</script><script src="../shared/draft.js"></script><script src="../shared/navigation.js"></script><script id="ri-nav-data" type="application/json">["Dictée","Analyse IA","Pièces","Exports","Validation XML"]</script><script>
 (function(){
-const stages=['Dictée','Analyse IA','Pièces','Exports','Validation'];
-const main=document.querySelector('main');
-if(!main)return;
-const sections=Array.from(main.children).filter(x=>x.tagName==='SECTION');
-if(sections.length!==5)return;
-const wrapper=document.createElement('div');
-wrapper.innerHTML='<div class="ri-top"><a href="../accueil/index.html">⌂ Accueil</a><button type="button" id="ri-return">← Retour</button></div><div class="ri-stepper" id="ri-steps"></div><div class="ri-progress" id="ri-progress"></div>';
-main.insertBefore(wrapper,sections[0]);
-const actions=document.createElement('div');actions.className='ri-actions';
-actions.innerHTML='<button type="button" class="secondary" id="ri-prev">← Précédent</button><button type="button" id="ri-next">Suivant →</button>';
-main.appendChild(actions);
+'use strict';
+const panels=Array.from(document.querySelectorAll('main > section.ri-panel'));
+if(!panels.length)return;
+const tabs=document.querySelector('.ri-tabs');
+const back=document.getElementById('ri-back');const next=document.getElementById('ri-forward');
+const names=JSON.parse(document.getElementById('ri-nav-data').textContent);
 let current=0;
-const tabs=document.getElementById('ri-steps');
-stages.forEach((label,i)=>{const b=document.createElement('button');b.type='button';b.textContent=(i+1)+' · '+label;b.addEventListener('click',()=>show(i));tabs.appendChild(b)});
-function show(i){current=Math.max(0,Math.min(stages.length-1,i));document.body.classList.add('ri-guided');for(let j=0;j<stages.length;j++)document.body.classList.toggle('ri-stage-'+j,j===current);Array.from(tabs.children).forEach((b,j)=>b.classList.toggle('active',j===current));document.getElementById('ri-progress').textContent='Étape '+(current+1)+' sur '+stages.length+' — Modifiable à tout moment';document.getElementById('ri-prev').disabled=current===0;document.getElementById('ri-next').textContent=current===stages.length-1?'Ouvrir l’étape 2 →':'Suivant →';window.scrollTo(0,0)}
-document.getElementById('ri-prev').onclick=()=>show(current-1);
-document.getElementById('ri-return').onclick=()=>{if(current===0)location.href='../accueil/index.html';else show(current-1)};
-document.getElementById('ri-next').onclick=()=>{
- if(current!==stages.length-1){show(current+1);return;}
- const realNext=document.getElementById('nextstep');
- if(realNext && !realNext.disabled){window.releveSaveDraft?.();realNext.click();}
- else{document.getElementById('exportguard').textContent='Exporte ou importe d’abord le XML de l’étape 1 pour poursuivre.';}
+function show(n){current=Math.max(0,Math.min(n,panels.length-1));panels.forEach((p,i)=>p.classList.toggle('ri-visible',i===current));[...tabs.children].forEach((b,i)=>{b.classList.toggle('active',i===current);b.setAttribute('aria-current',i===current?'step':'false')});back.disabled=current===0;next.textContent=current===panels.length-1?'Terminer cette étape':'Suivant →';window.scrollTo(0,0)}
+names.forEach((name,i)=>{let b=document.createElement('button');b.type='button';b.textContent=(i+1)+' · '+name;b.onclick=()=>show(i);tabs.appendChild(b)});
+back.onclick=()=>show(current-1);
+next.onclick=()=>{
+if(current<panels.length-1){show(current+1);return;}
+const target=document.getElementById(window.RI_STEP2?'exportstep2':'nextstep');
+if(!target)return;
+if(!window.RI_STEP2 && target.disabled){document.getElementById('exportguard').textContent='Export XML de l’étape 1 obligatoire avant de continuer.';return;}
+if(window.RI_STEP2){show(1);return;}
+window.releveSaveDraft?.();target.click();
 };
 show(0);
 })();
-</script></html>
+</script></body></html>
