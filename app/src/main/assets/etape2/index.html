@@ -42,7 +42,7 @@ function roomLabel(i){const r=rooms[i];return `${i+1}. ${r.name} (${r.floor||'Ni
 function roomLocation(i){const r=rooms[i];return (r.floor?r.floor+' - ':'')+r.name;}
 function saveProgress(){
   if(!rooms.length)return;
-  const payload={signature:JSON.stringify(rooms),selectedPiece,pieces:pieceData};
+  const payload={signature:JSON.stringify(rooms),roomKeys:[...keys],selectedPiece,pieces:pieceData};
   try{localStorage.setItem(progressKey,JSON.stringify(payload));}catch(e){$('step2status').textContent='Sauvegarde locale impossible : '+e.message;}
 }
 function storePiece(){
@@ -90,11 +90,45 @@ function initializePieces(){
   pieceData=rooms.map(()=>({speech:'',items:[],validated:false}));
   try{
     const stored=JSON.parse(localStorage.getItem(progressKey)||'null');
-    if(stored&&stored.signature===JSON.stringify(rooms)&&Array.isArray(stored.pieces)&&stored.pieces.length===rooms.length){
-      pieceData=stored.pieces.map(p=>({speech:String(p.speech||''),items:Array.isArray(p.items)?p.items:[],validated:!!p.validated}));
-      selectedPiece=Math.max(0,Math.min(rooms.length-1,Number(stored.selectedPiece)||0));
+    if(stored&&Array.isArray(stored.pieces)){
+      const clean=p=>({speech:String(p?.speech||''),items:Array.isArray(p?.items)?p.items:[],validated:!!p?.validated});
+      if(stored.signature===JSON.stringify(rooms)&&stored.pieces.length===rooms.length){
+        pieceData=stored.pieces.map(clean);
+        selectedPiece=Math.max(0,Math.min(rooms.length-1,Number(stored.selectedPiece)||0));
+      }else{
+        // Avant tout changement de liste, sauvegarder INTEGRALEMENT l'ancien état.
+        const backupKey='releve_immo_etape2_backup_'+Date.now();
+        try{localStorage.setItem(backupKey,JSON.stringify(stored));}
+        catch(error){
+          alert('Stockage saturé : les anciens composants ne peuvent pas être sauvegardés. Retour à l’étape 1 sans modification des données.');
+          location.replace('../etape1/index.html');return;
+        }
+        let oldRooms=[];
+        try{oldRooms=JSON.parse(stored.signature||'[]');}catch(e){}
+        const oldKeys=Array.isArray(stored.roomKeys)?stored.roomKeys:[];
+        const used=new Set();let matched=0;
+        const identity=r=>JSON.stringify([String(r?.name||'').trim().toLocaleLowerCase('fr'),String(r?.floor||'').trim().toLocaleLowerCase('fr')]);
+        pieceData=rooms.map((room,i)=>{
+          let index=-1;
+          // Identifiant Liciel prioritaire : renommer ou déplacer une pièce ne perd pas ses composants.
+          if(keys[i]&&oldKeys.length)index=oldKeys.findIndex((key,j)=>key===keys[i]&&!used.has(j));
+          // Pour les anciennes sauvegardes sans identifiants, rapprocher par nom + niveau,
+          // sans réutiliser une même pièce source pour deux pièces différentes.
+          if(index<0)index=oldRooms.findIndex((old,j)=>!used.has(j)&&identity(old)===identity(room));
+          if(index<0||index>=stored.pieces.length)return {speech:'',items:[],validated:false};
+          used.add(index);matched++;
+          const entry=clean(stored.pieces[index]);
+          // Si l'identité a changé, forcer la revalidation et actualiser la localisation.
+          if(identity(oldRooms[index])!==identity(room)){
+            entry.validated=false;
+            entry.items=entry.items.map(item=>({...item,Localistion:roomLocation(i)}));
+          }
+          return entry;
+        });
+        $('roomstatus').textContent=matched+' pièce(s) rapprochée(s) sur '+rooms.length+'. Ancienne version conservée dans une sauvegarde de sécurité.';
+      }
     }
-  }catch(e){}
+  }catch(e){alert('Impossible de restaurer les composants : '+e.message);location.replace('../etape1/index.html');return;}
   const select=$('pieceSelect');select.replaceChildren();
   rooms.forEach((_,i)=>{const o=document.createElement('option');o.value=String(i);select.append(o);});
   select.onchange=()=>showPiece(Number(select.value));
