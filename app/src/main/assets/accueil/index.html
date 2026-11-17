@@ -63,4 +63,42 @@
  if(!localStorage.getItem(flag)){ $('setup-close').hidden=true;show() }
 })();
 </script>
+<style>
+.home-action.is-unavailable,.utility.is-unavailable{opacity:.55;filter:grayscale(.3)}
+.home-action.is-unavailable{cursor:not-allowed}
+</style>
+<script>
+/* Accueil : aucun raccourci ne doit ouvrir une fonction sans données. */
+(function(){
+  'use strict';
+  const draftKey='releve_immo_draft_v2';
+  const resume=document.querySelector('a.home-action[href="../etape1/index.html"]');
+  const exportLink=document.querySelector('a.utility[href="../etape1/index.html#xml"]');
+  const caption=document.getElementById('resume-caption');
+  function hasUsableDraft(){
+    try {const d=JSON.parse(localStorage.getItem(draftKey)||'null');return !!(d&&(String(d.speech||'').trim()||Array.isArray(d.rooms)&&d.rooms.length));}
+    catch(e){return false}
+  }
+  function update(){
+    const exists=hasUsableDraft();
+    for(const el of [resume,exportLink]){
+      if(!el)continue;
+      el.classList.toggle('is-unavailable',!exists);
+      el.setAttribute('aria-disabled',String(!exists));
+      el.title=exists?'':'Aucun relevé en cours : commence un relevé ou restaure une archive';
+    }
+    if(caption&&!exists)caption.textContent='Aucun chantier en cours';
+  }
+  for(const el of [resume,exportLink]){
+    if(!el)continue;
+    el.addEventListener('click',e=>{
+      if(hasUsableDraft())return;
+      e.preventDefault();
+      alert('Aucun relevé en cours. Crée un nouveau relevé ou ouvre Mes relevés pour restaurer un chantier.');
+    });
+  }
+  update();
+  window.addEventListener('pageshow',update);
+})();
+</script>
 </body></html>
