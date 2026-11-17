@@ -4,11 +4,11 @@
   const routes = {
     parametres: { stage: 1, target: 'geminikey' },
     geminikey: { stage: 1, target: 'geminikey' },
-    importxml: { stage: 4, target: 'importxml', action: 'click' },
-    xml: { stage: 3, target: 'xml' },
-    csv: { stage: 3, target: 'csv' },
-    json: { stage: 3, target: 'json' },
-    txt: { stage: 3, target: 'txt' }
+    importxml: { stage: 3, target: 'importxml', action: 'click' },
+    xml: { stage: 2, target: 'xml' },
+    csv: { stage: 2, target: 'csv' },
+    json: { stage: 2, target: 'json' },
+    txt: { stage: 2, target: 'txt' }
   };
   function navigate() {
     const key = decodeURIComponent(location.hash.slice(1)).toLowerCase();
@@ -17,7 +17,7 @@
     let attempts = 0;
     const waitForGuided = () => {
       const tabs = document.querySelectorAll('#ri-steps button');
-      if (tabs.length < 5 && attempts++ < 25) {
+      if (tabs.length < 4 && attempts++ < 25) {
         setTimeout(waitForGuided, 40);
         return;
       }
