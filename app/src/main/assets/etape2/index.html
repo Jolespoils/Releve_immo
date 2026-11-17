@@ -47,7 +47,23 @@ main>.topbar,main>.step-track,main>h1,main>p.muted,main>p:not(.muted),.ri-hero,.
 .ri-panel .ri-card button#mic2{display:block;width:142px;height:142px;min-width:142px;min-height:142px;margin:26px auto 42px;padding:0;border-radius:50%;border:7px solid #e8f3ff;background:linear-gradient(145deg,#258df4,#044ba9);box-shadow:0 12px 26px #0652aa48;color:white;font-size:0}.ri-panel .ri-card button#mic2:disabled{opacity:.45}
 
 #mic2{border-radius:50%!important;background:linear-gradient(145deg,#258df4,#044ba9)!important;border:7px solid #e8f3ff!important;width:142px!important;height:142px!important;padding:0!important;margin:26px auto 42px!important;font-size:0!important;color:white!important}
-</style></head><body><main><header class="ri-header"><a aria-label="Retour à l’accueil" href="../accueil/index.html">‹</a><strong>Composants du relevé</strong></header><div class="ri-stepper" id="ri-stepper"></div><section class="ri-panel"><h2>Étape 1 : Dictée des composants</h2><p>Sélectionne une pièce issue du XML validé, puis dicte ses murs, sols, plafonds et ouvertures.</p><div class="ri-card"><label for="pieceSelect">Pièce à traiter</label><div id="room-slot"><select id="pieceSelect" style="width:100%;padding:12px;margin:8px 0"></select></div><div id="piece-progress-slot"><p class="muted" id="pieceProgress"></p></div><div id="mic-slot"><button id="mic2">🎙️ Démarrer la dictée</button></div><div class="ri-control-row" id="voice-controls"><button disabled="" id="stop2">■ Arrêter</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button></div><label for="speech2">Transcription des composants</label><div id="speech-slot"><textarea id="speech2" placeholder="Dans le salon, les murs A B C D en plâtre peinture…"></textarea></div><div class="ri-control-row" id="analyze-controls"><button id="parse2">Analyser les composants avec l’IA</button><button id="validatePiece" type="button">✓ Valider cette pièce</button><button id="nextPiece" type="button">Pièce suivante →</button></div><div id="status-slot"><p class="muted" id="roomstatus"></p><p class="muted" id="parse2status"></p></div></div><button id="backstep">← Étape 1</button></section><section class="ri-panel"><h2>Étape 2 : Détail des composants</h2><p>Consulte et corrige les composants de la pièce sélectionnée avant l’export.</p><button id="addcomponent">+ Ajouter un composant</button><div id="components"></div></section><section class="ri-panel"><h2>Étape 3 : Export des composants</h2><p>Génère les fichiers avec les données réellement validées. Aucun export fictif.</p><div class="ri-card"><h3>Fichiers disponibles</h3><div id="export-slots"><button class="ri-export-btn" id="exportstep2">Exporter Table_General_Desciption_Pieces.xml</button><button class="ri-export-btn" id="exporttxt2">Exporter la dictée et les composants (.txt)</button></div><p class="muted" id="step2status"></p></div></section><div class="ri-actions"><button id="ri-back" type="button">← Précédent</button><button id="ri-forward" type="button">Suivant →</button></div></main><script>
+
+/* Sélecteur de pièces : état de validation immédiatement lisible. */
+#pieceSelect{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important}
+.ri-room-picker{position:relative;margin:9px 0 12px}
+.ri-room-trigger{width:100%;display:flex;align-items:center;gap:12px;text-align:left;background:#fff;color:#102a49;border:2px solid #0872db;border-radius:14px;padding:13px 15px;font-weight:750;min-height:58px}
+.ri-room-trigger .ri-room-name{flex:1;min-width:0;overflow-wrap:anywhere}
+.ri-room-list{position:relative;margin-top:8px;border:1px solid #d5e5f4;border-radius:16px;background:white;overflow:hidden;box-shadow:0 10px 25px #092d4b18;max-height:50vh;overflow-y:auto}
+.ri-room-option{display:flex;align-items:center;gap:12px;width:100%;padding:13px 14px;text-align:left;background:white;border:0;border-bottom:1px solid #dbe8f2;color:#122c49;min-height:59px}
+.ri-room-option:last-child{border-bottom:0}
+.ri-room-option[data-done="true"]{background:#e3f9e9}
+.ri-room-option[aria-selected="true"]{outline:2px solid #0872db;outline-offset:-2px}
+.ri-room-status{width:31px;height:31px;flex:none;display:grid;place-items:center;border:2px solid #7b8999;border-radius:50%;font-size:21px;color:#6c7887;font-weight:800}
+[data-done="true"]>.ri-room-status,.ri-room-trigger[data-done="true"]>.ri-room-status{background:#08a32e;border-color:#08a32e;color:white}
+.ri-room-option-name{flex:1;min-width:0;overflow-wrap:anywhere;font-weight:750}
+.ri-room-option-floor{display:block;color:#59718a;font-weight:400;font-size:12px;margin-top:2px}
+.ri-room-count{display:inline-block;padding:7px 12px;background:#d8f9e4;border-radius:999px;color:#087333;font-weight:750;margin:5px 0}
+</style></head><body><main><header class="ri-header"><a aria-label="Retour à l’accueil" href="../accueil/index.html">‹</a><strong>Composants du relevé</strong></header><div class="ri-stepper" id="ri-stepper"></div><section class="ri-panel"><h2>Étape 1 : Dictée des composants</h2><p>Sélectionne une pièce issue du XML validé, puis dicte ses murs, sols, plafonds et ouvertures.</p><div class="ri-card"><label for="pieceSelect">Pièce à traiter</label><div id="room-slot"><select id="pieceSelect" aria-label="Pièce sélectionnée"></select><div class="ri-room-picker"><button type="button" id="ri-room-trigger" class="ri-room-trigger" aria-expanded="false" aria-controls="ri-room-list"><span class="ri-room-status" id="ri-room-current-status">○</span><span class="ri-room-name" id="ri-room-current-name">Choisir une pièce</span><span aria-hidden="true">⌄</span></button><div id="ri-room-list" class="ri-room-list" role="listbox" aria-label="Liste des pièces" hidden></div></div></div><div id="piece-progress-slot"><p class="muted" id="pieceProgress"></p></div><div id="mic-slot"><button id="mic2">🎙️ Démarrer la dictée</button></div><div class="ri-control-row" id="voice-controls"><button disabled="" id="stop2">■ Arrêter</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button></div><label for="speech2">Transcription des composants</label><div id="speech-slot"><textarea id="speech2" placeholder="Dans le salon, les murs A B C D en plâtre peinture…"></textarea></div><div class="ri-control-row" id="analyze-controls"><button id="parse2">Analyser les composants avec l’IA</button><button id="validatePiece" type="button">✓ Valider cette pièce</button><button id="nextPiece" type="button">Pièce suivante →</button></div><div id="status-slot"><p class="muted" id="roomstatus"></p><p class="muted" id="parse2status"></p></div></div><button id="backstep">← Étape 1</button></section><section class="ri-panel"><h2>Étape 2 : Détail des composants</h2><p>Consulte et corrige les composants de la pièce sélectionnée avant l’export.</p><button id="addcomponent">+ Ajouter un composant</button><div id="components"></div></section><section class="ri-panel"><h2>Étape 3 : Export des composants</h2><p>Génère les fichiers avec les données réellement validées. Aucun export fictif.</p><div class="ri-card"><h3>Fichiers disponibles</h3><div id="export-slots"><button class="ri-export-btn" id="exportstep2">Exporter Table_General_Desciption_Pieces.xml</button><button class="ri-export-btn" id="exporttxt2">Exporter la dictée et les composants (.txt)</button></div><p class="muted" id="step2status"></p></div></section><div class="ri-actions"><button id="ri-back" type="button">← Précédent</button><button id="ri-forward" type="button">Suivant →</button></div></main><script>
 const $=id=>document.getElementById(id);
 let rooms=[],keys=[],step2Items=[];
 try{const payload=JSON.parse(decodeURIComponent(location.hash.slice(1)));if(!Array.isArray(payload.rooms)||!payload.rooms.length)throw Error('Pièces absentes');
@@ -81,14 +97,40 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='hidden')storePiece();
 });
 
+function refreshRoomPicker(){
+  const list=$('ri-room-list'),trigger=$('ri-room-trigger');
+  if(!list||!rooms.length)return;
+  const current=pieceData[selectedPiece],done=!!current?.validated;
+  trigger.dataset.done=String(done);
+  $('ri-room-current-status').textContent=done?'✓':'○';
+  $('ri-room-current-name').textContent=rooms[selectedPiece]?.name||'Choisir une pièce';
+  list.replaceChildren();
+  rooms.forEach((room,i)=>{
+    const button=document.createElement('button');button.type='button';button.className='ri-room-option';
+    button.setAttribute('role','option');button.setAttribute('aria-selected',String(i===selectedPiece));
+    button.dataset.done=String(!!pieceData[i]?.validated);
+    const mark=document.createElement('span');mark.className='ri-room-status';mark.textContent=pieceData[i]?.validated?'✓':'○';
+    const label=document.createElement('span');label.className='ri-room-option-name';label.textContent=room.name;
+    const floor=document.createElement('small');floor.className='ri-room-option-floor';floor.textContent=room.floor||'Niveau non indiqué';label.append(floor);
+    const arrow=document.createElement('span');arrow.textContent='›';arrow.setAttribute('aria-hidden','true');
+    button.append(mark,label,arrow);
+    button.onclick=()=>{showPiece(i);list.hidden=true;trigger.setAttribute('aria-expanded','false');};
+    list.append(button);
+  });
+}
+$('ri-room-trigger').onclick=()=>{
+ const list=$('ri-room-list');list.hidden=!list.hidden;
+ $('ri-room-trigger').setAttribute('aria-expanded',String(!list.hidden));
+};
 function refreshProgress(){
   const done=pieceData.filter(p=>p.validated).length;
-  $('pieceProgress').textContent=`${done} pièce(s) validée(s) sur ${rooms.length} · ${countAll()} composant(s) au total.`;
+  $('pieceProgress').innerHTML=`<span class="ri-room-count">${done} / ${rooms.length} pièces complétées</span> · ${countAll()} composant(s) au total.`;
   const select=$('pieceSelect');
   for(let i=0;i<rooms.length;i++){
     select.options[i].textContent=(pieceData[i].validated?'✓ ':'○ ')+roomLabel(i)+` — ${pieceData[i].items.length} composant(s)`;
   }
   $('validatePiece').textContent=pieceData[selectedPiece]?.validated?'✓ Pièce validée — revalider':'✓ Valider cette pièce';
+  refreshRoomPicker();
 }
 function showPiece(index){
   if(index<0||index>=rooms.length||step2Analyzing||audioImportRunning)return;
