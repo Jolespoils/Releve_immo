@@ -31,6 +31,54 @@ main textarea{min-height:160px}
 body.ri-guided main>section{display:none!important}
 body.ri-guided.ri-stage-0 main>section:nth-of-type(1),body.ri-guided.ri-stage-1 main>section:nth-of-type(2),body.ri-guided.ri-stage-2 main>section:nth-of-type(3),body.ri-guided.ri-stage-3 main>section:nth-of-type(4),body.ri-guided.ri-stage-4 main>section:nth-of-type(5){display:block!important}
 @media(max-width:520px){header h1{font-size:1.9rem!important}.ri-stepper button{font-size:.77rem;min-width:80px}main>section{padding:18px!important}}
+</style><style id="ri-unified-ui">
+/* Relevé Immo — unified visual layer. Existing JS and IDs remain untouched. */
+:root{color-scheme:dark;--ri-blue:#02b7ff;--ri-blue2:#0953bc;--ri-text:#f5faff;--ri-muted:#b9d0e7}
+html{min-height:100%;background:#06172a}
+body{margin:0!important;padding:0!important;min-height:100vh!important;background:linear-gradient(180deg,rgba(3,17,33,.87),rgba(8,29,51,.80) 45%,rgba(4,18,35,.95)),url('../accueil/salon.jpg') center center/cover fixed!important;color:var(--ri-text)!important;font-family:system-ui,-apple-system,Roboto,sans-serif!important}
+main{width:auto!important;max-width:850px!important;margin:0 auto!important;padding:calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 92px)!important}
+main>.topbar{display:flex!important;align-items:center;justify-content:space-between;gap:12px;margin:0 0 15px;color:#c8e5ff;font-size:12px;letter-spacing:.07em;font-weight:700}
+main>.topbar a{display:inline-flex;align-items:center;min-height:42px;box-sizing:border-box;padding:9px 15px;background:#ffffff1e;color:white!important;text-decoration:none;border:1px solid #ffffff5b;border-radius:14px}
+main>.step-track{display:flex;gap:7px;margin:0 0 28px}
+main>.step-track span{height:5px;flex:1;border-radius:10px;background:#ffffff36}
+main>.step-track span.active{background:#02b7ff;box-shadow:0 0 14px #02b7ff70}
+main>.step-track span.done{background:#80d8ff}
+main>h1{font-size:clamp(29px,8vw,42px)!important;line-height:1.1;letter-spacing:-.035em;margin:0 0 8px!important;color:white!important;text-shadow:0 2px 14px #0008}
+main>p{color:#cce4f7!important;font-size:15px;margin:0 0 23px!important}
+main>section{display:block;background:linear-gradient(145deg,rgba(15,39,66,.96),rgba(12,31,53,.94))!important;color:#f7fbff!important;border:1px solid #77a9d14f!important;border-radius:25px!important;box-shadow:0 14px 48px #0007!important;padding:clamp(18px,5vw,29px)!important;margin:18px 0!important;backdrop-filter:blur(14px)}
+main>section h2{font-size:clamp(22px,6vw,28px)!important;color:white!important;line-height:1.18;margin:4px 0 17px!important;letter-spacing:-.02em}
+main>section p,main>section .muted,main>section small,main>section label{color:#c5daed!important;line-height:1.55}
+main>section p{font-size:15px}
+main>section label{display:block;margin:14px 0 7px;font-weight:650}
+main button,main>section button{appearance:none;min-height:50px;border-radius:14px!important;padding:12px 16px!important;margin:6px 5px 6px 0!important;background:linear-gradient(115deg,#08aefa,#0752b7)!important;border:1px solid #45caff77!important;color:white!important;font:inherit;font-weight:700!important;box-shadow:0 5px 15px #001a3680!important;cursor:pointer;max-width:100%;white-space:normal;text-align:center}
+main button:disabled{opacity:.45!important;box-shadow:none!important;cursor:not-allowed}
+main button:focus-visible,main a:focus-visible,main input:focus-visible,main textarea:focus-visible,main select:focus-visible{outline:3px solid #69d6ff;outline-offset:2px}
+main input,main textarea,main select{background:#f5faff!important;color:#112a48!important;border:1px solid #adc6e0!important;border-radius:14px!important;box-sizing:border-box!important;font:inherit!important;padding:13px!important;max-width:100%;width:100%;min-height:50px}
+main textarea{min-height:165px!important;line-height:1.55;resize:vertical}
+main input[type=file]{min-height:0}
+main .room{background:#16395a!important;border:1px solid #ffffff27!important;border-radius:17px!important;margin:12px 0!important;padding:16px!important;box-shadow:0 6px 22px #0003}
+main .room label,main .room strong{color:#e3f4ff!important}
+main .room details{background:#ffffff12!important;color:#fff!important;border-radius:12px;padding:12px}
+main .room summary{color:#fff!important}
+main .room .fields{gap:10px}
+main .room button,main button.danger-key,main button.delete-component,main #clearrooms,main #stop,main #stop2{background:#8e3149!important;border-color:#d7758c55!important}
+main #mic,main #mic2{min-height:66px;font-size:17px;background:linear-gradient(115deg,#02c4ff,#0757c3)!important}
+main #ai,main #parse,main #parse2,main #xml,main #nextstep,main #exportstep2{background:linear-gradient(110deg,#04aaf1,#0054c5)!important}
+main #aiprogress,main #pieceProgress{background:#ffffff13!important;border:1px solid #ffffff32!important;border-radius:14px;padding:13px;color:#e2f4ff!important}
+main #ailog{color:#d5ebff!important}
+main #providerkeys{overflow-wrap:anywhere}
+main .ri-top{display:flex;gap:10px;justify-content:space-between;align-items:center;margin:15px 0}
+main .ri-top a,main .ri-top button{color:white!important;text-decoration:none;background:#ffffff20!important;border:1px solid #ffffff55!important;border-radius:13px!important;min-height:42px;padding:9px 12px!important;font-size:14px}
+main .ri-stepper{display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin;margin:14px 0 12px;padding:3px 0 10px}
+main .ri-stepper button{flex:0 0 auto;min-width:105px;background:#ffffff18!important;border:1px solid #ffffff52!important;box-shadow:none!important;font-size:13px!important;padding:10px!important;min-height:45px!important}
+main .ri-stepper button.active{background:linear-gradient(115deg,#08b4ff,#0955c0)!important;border-color:#51d4ff!important;box-shadow:0 5px 20px #00a9ff4b!important}
+main .ri-progress{color:#c4dff4;font-size:13px;margin:8px 0 17px}
+main .ri-actions{display:flex;gap:10px;margin:20px 0}
+main .ri-actions button{flex:1;margin:0!important;min-width:0}
+main .ri-actions button.secondary,main #backstep{background:#ffffff1c!important;border:1px solid #ffffff60!important;color:white!important;box-shadow:none!important}
+main #roomstatus,main #step2status,main #parse2status,main #exportguard{color:#c5e2fa!important}
+main #validatePiece{background:linear-gradient(110deg,#087c83,#075e6a)!important}
+@media(max-width:560px){main{padding-left:14px!important;padding-right:14px!important}main>section{padding:20px!important}main>section button{width:100%;margin:5px 0!important}main .ri-stepper button{width:auto!important;margin:0!important;min-width:95px}main .ri-actions button{width:50%!important}main>.topbar{font-size:11px}main .room .fields{grid-template-columns:1fr!important}}
 </style><script>
 const $=id=>document.getElementById(id);
 const levels=['Sous-sol','Rez de chaussée','Entresol','1er étage','2e étage','3e étage','4e étage','5e étage','Combles','Grenier','Toiture','Extérieur'];
