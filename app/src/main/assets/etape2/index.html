@@ -1,8 +1,38 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relevé Immo — Étape 2</title><style>body{font-family:system-ui;background:#f3f6fa;color:#142338;margin:0;padding:20px}main{max-width:700px;margin:auto}section{background:white;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 12px #0001}button{border:0;background:#124a85;color:white;border-radius:10px;padding:12px;margin:4px;cursor:pointer}button:disabled{opacity:.45}textarea{width:100%;min-height:140px;box-sizing:border-box;padding:12px;font:inherit}input{font:inherit;padding:8px;width:100%;box-sizing:border-box}.muted{color:#667}.room{border-bottom:1px solid #ddd;padding:10px 0}.room label{display:block;margin:8px 0 3px}.delete-component{display:block;margin:8px auto 4px;background:#c62828;color:white}.delete-component:hover{background:#a91e1e}</style></head><body><main><nav class="topbar"><a class="back-link" href="../etape1/index.html">← Retour</a><span class="step-label">ÉTAPE 2 / 2 · RELEVÉ IMMO</span></nav><div class="step-track"><span class="done"></span><span class="done"></span><span class="active"></span><span></span><span></span></div><h1>🏠 Relevé Immo</h1><p>Étape 2 — Description des composants</p><section><button id="backstep">← Étape 1</button><p id="roomstatus" class="muted"></p><h2>Dictée des composants par pièce</h2><label for="pieceSelect">Pièce à traiter</label><select id="pieceSelect" style="width:100%;padding:12px;margin:8px 0"></select><p id="pieceProgress" class="muted"></p><button id="mic2">🎙️ Démarrer la dictée</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button><button id="stop2" disabled>■ Arrêter</button><textarea id="speech2" placeholder="Dans le salon, les murs A B C D en plâtre peinture…"></textarea><button id="parse2">Analyser les composants avec l’IA</button><button id="validatePiece" type="button">✓ Valider cette pièce</button><button id="nextPiece" type="button">Pièce suivante →</button><p id="parse2status" class="muted"></p></section><section><h2>Composants de la pièce sélectionnée</h2><button id="addcomponent">+ Ajouter un composant</button><div id="components"></div><button id="exportstep2">Exporter Table_General_Desciption_Pieces.xml</button><button id="exporttxt2">Exporter la dictée et les composants (.txt)</button><p id="step2status" class="muted"></p></section></main><link rel="stylesheet" href="../shared/theme.css"><script>
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relevé Immo — Étape 2</title><style>body{font-family:system-ui;background:#f3f6fa;color:#142338;margin:0;padding:20px}main{max-width:700px;margin:auto}section{background:white;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 12px #0001}button{border:0;background:#124a85;color:white;border-radius:10px;padding:12px;margin:4px;cursor:pointer}button:disabled{opacity:.45}textarea{width:100%;min-height:140px;box-sizing:border-box;padding:12px;font:inherit}input{font:inherit;padding:8px;width:100%;box-sizing:border-box}.muted{color:#667}.room{border-bottom:1px solid #ddd;padding:10px 0}.room label{display:block;margin:8px 0 3px}.delete-component{display:block;margin:8px auto 4px;background:#c62828;color:white}.delete-component:hover{background:#a91e1e}</style><style id="releve-v2-etape2-design">
+:root{--accent:#16a6ff;--navy:#0a2548;--ink:#12223c;--line:#dbe8f7}
+html{min-height:100%;background:#0a1727}
+body{min-height:100vh!important;margin:0!important;padding:env(safe-area-inset-top) 14px 50px!important;background:linear-gradient(180deg,rgba(5,19,37,.78) 0%,rgba(8,28,52,.87) 42%,rgba(6,18,34,.96) 100%),url('../accueil/salon.jpg') center top/cover fixed!important;color:#fff!important;font-family:system-ui,-apple-system,Roboto,sans-serif!important}
+main{max-width:780px!important;margin:0 auto!important}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:17px 4px 8px;font-size:12px;letter-spacing:.09em;font-weight:700;color:#cfe7ff}
+.back-link{color:white;text-decoration:none;border:1px solid #8eb8dd80;border-radius:22px;padding:10px 14px;background:#102f54aa}
+.step-track{display:flex;gap:7px;margin:15px 4px 22px}.step-track span{height:5px;border-radius:8px;background:#ffffff50;flex:1}.step-track .done{background:#8bd7ff}.step-track .active{background:#149bff;box-shadow:0 0 12px #00b7ff}
+main>h1{font-size:clamp(28px,7vw,42px);margin:18px 5px 3px;color:#fff!important;letter-spacing:-.035em;text-shadow:0 3px 16px #0008}
+main>p{margin:0 5px 24px;color:#d8ebfa;font-size:15px}
+section{background:linear-gradient(150deg,rgba(255,255,255,.97),rgba(240,247,255,.95))!important;border:1px solid #ffffffc7!important;border-radius:24px!important;box-shadow:0 12px 40px #0005!important;padding:clamp(17px,4vw,27px)!important;margin:16px 0!important;color:var(--ink)!important}
+section h2{font-size:clamp(21px,5vw,28px);line-height:1.2;margin:12px 0 17px;color:#102846}
+section label{display:block;margin:15px 0 6px;font-weight:650;color:#254365}
+section button{background:linear-gradient(120deg,#058de7,#0d3d88)!important;color:#fff!important;border:1px solid #73c7ff5c!important;border-radius:14px!important;padding:13px 16px!important;margin:6px 5px 6px 0!important;min-height:48px;font-weight:650;box-shadow:0 5px 12px #124a852b;cursor:pointer;max-width:100%}
+section button:disabled{opacity:.45!important;box-shadow:none}
+#mic2{background:linear-gradient(120deg,#00b8ff,#0652b7)!important;min-height:58px;font-size:16px}
+#backstep{background:#e2ecf7!important;color:#163c66!important;border:1px solid #c7d9ec!important;box-shadow:none}
+#stop2,.delete-component{background:#a52b40!important}
+#validatePiece{background:linear-gradient(120deg,#128879,#086b62)!important}
+#exportstep2,#exporttxt2{width:100%;text-align:center}
+textarea,input,select{border:1px solid #b8cde4!important;background:#fff!important;border-radius:13px!important;color:#182b44!important;font:inherit!important;box-sizing:border-box!important;padding:13px!important;max-width:100%;outline-offset:2px}
+textarea{width:100%!important;min-height:155px!important;line-height:1.55;resize:vertical}
+select{width:100%!important;min-height:52px}
+input{width:100%!important}
+.room{background:#fff;border:1px solid var(--line)!important;border-radius:18px;padding:17px!important;margin:12px 0!important;box-shadow:0 4px 12px #102d5010}
+.room strong{display:block;color:#114b88;font-size:18px;margin-bottom:12px}
+.room details{background:#f1f6fc;border-radius:12px;padding:12px;margin:12px 0}.room summary{font-weight:600;cursor:pointer}
+.muted,#parse2status,#step2status{color:#5b7088!important;line-height:1.55;overflow-wrap:anywhere}
+#pieceProgress{background:#e9f4ff;border-radius:12px;padding:12px;color:#12518d!important}
+@media(max-width:390px){section button{width:100%;margin:5px 0!important}.topbar{font-size:10px}}
+</style></head><body><main><nav class="topbar"><a class="back-link" href="../etape1/index.html">← Retour</a><span class="step-label">ÉTAPE 2 / 2 · RELEVÉ IMMO</span></nav><div class="step-track"><span class="done"></span><span class="done"></span><span class="active"></span><span></span><span></span></div><h1>🏠 Relevé Immo</h1><p>Étape 2 — Description des composants</p><section><button id="backstep">← Étape 1</button><p id="roomstatus" class="muted"></p><h2>Dictée des composants par pièce</h2><label for="pieceSelect">Pièce à traiter</label><select id="pieceSelect" style="width:100%;padding:12px;margin:8px 0"></select><p id="pieceProgress" class="muted"></p><button id="mic2">🎙️ Démarrer la dictée</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button><button id="stop2" disabled>■ Arrêter</button><textarea id="speech2" placeholder="Dans le salon, les murs A B C D en plâtre peinture…"></textarea><button id="parse2">Analyser les composants avec l’IA</button><button id="validatePiece" type="button">✓ Valider cette pièce</button><button id="nextPiece" type="button">Pièce suivante →</button><p id="parse2status" class="muted"></p></section><section><h2>Composants de la pièce sélectionnée</h2><button id="addcomponent">+ Ajouter un composant</button><div id="components"></div><button id="exportstep2">Exporter Table_General_Desciption_Pieces.xml</button><button id="exporttxt2">Exporter la dictée et les composants (.txt)</button><p id="step2status" class="muted"></p></section></main><link rel="stylesheet" href="../shared/theme.css"><script>
 const $=id=>document.getElementById(id);
 let rooms=[],keys=[],step2Items=[];
 try{const payload=JSON.parse(decodeURIComponent(location.hash.slice(1)));if(!Array.isArray(payload.rooms)||!payload.rooms.length)throw Error('Pièces absentes');rooms=payload.rooms;keys=payload.keys||[];$('roomstatus').textContent=rooms.length+' pièces reçues depuis l’étape 1.';}catch(e){$('roomstatus').textContent='Aucune liste de pièces reçue. Retourne à l’étape 1 et utilise « Passer à l’étape 2 ».';$('parse2').disabled=true;$('exportstep2').disabled=true;}
-$('backstep').onclick=()=>location.href='../etape1/index.html';
+$('backstep').onclick=()=>{storePiece();location.href='../etape1/index.html';};
 
 // Chaque pièce conserve sa dictée, ses composants et son statut.
 // Les pièces sont identifiées par leur position dans le XML 1, même si leurs noms se répètent.
@@ -22,6 +52,12 @@ function storePiece(){
   saveProgress();
 }
 function countAll(){return pieceData.reduce((n,p)=>n+p.items.length,0);}
+// Conserver la dictée de la pièce même si l'utilisateur quitte l'écran sans changer de pièce.
+window.addEventListener('pagehide',()=>{storePiece();});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='hidden')storePiece();
+});
+
 function refreshProgress(){
   const done=pieceData.filter(p=>p.validated).length;
   $('pieceProgress').textContent=`${done} pièce(s) validée(s) sur ${rooms.length} · ${countAll()} composant(s) au total.`;
