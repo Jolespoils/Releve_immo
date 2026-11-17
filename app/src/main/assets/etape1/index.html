@@ -6,7 +6,32 @@
 <section id="step1gate"><h2>Sauvegarde et étape 2</h2><p id="exportguard" class="muted">Exporte le XML de l’étape 1 pour déverrouiller la suite.</p><button id="importxml">Importer un XML</button><input id="xmlfile" type="file" accept=".xml,text/xml,application/xml" hidden><button id="nextstep" disabled>Passer à l’étape 2 →</button></section>
 </main>
 <style>.room{border-bottom:1px solid #ddd;padding:10px 0}.room label{display:block;margin:7px 0 3px;font-size:.9em}.room input,.room select{width:100%;box-sizing:border-box}.room button{background:#8d3030}.room .fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}@media(max-width:500px){.room .fields{grid-template-columns:1fr}}select{font:inherit;padding:9px}.room textarea{min-height:60px}small{margin:8px 0}</style>
-<link rel="stylesheet" href="../shared/theme.css"><script>
+<link rel="stylesheet" href="../shared/theme.css"><style id="ri-v2-screen">
+/* Interface V2 : le moteur de dictée, les API et les exports restent inchangés. */
+body{background:linear-gradient(160deg,rgba(8,20,40,.78),rgba(14,39,67,.65)),url('../accueil/salon.jpg') center/cover fixed!important;color:#f3f8ff!important;min-height:100vh;padding:0!important;margin:0!important}
+main{max-width:850px!important;margin:0 auto!important;padding:16px 14px 110px!important}
+header{max-width:850px;margin:auto;padding:24px 20px 8px!important;background:transparent!important;color:white!important}
+header h1,header p{color:white!important;text-shadow:0 2px 8px #14253c}
+main>section{background:rgba(244,249,255,.95)!important;color:#152841!important;border:1px solid rgba(255,255,255,.85)!important;border-radius:24px!important;box-shadow:0 18px 55px #04142677!important;padding:23px!important;margin:14px 0!important;backdrop-filter:blur(16px)}
+main>section h2{color:#112a49!important;font-size:1.45rem!important;margin-top:0!important}
+main>section p,.muted{line-height:1.5}
+main button{border-radius:13px!important;padding:12px 17px!important;margin:5px 4px 5px 0!important;min-height:46px;box-shadow:0 3px 8px #0c2b4a20}
+main input,main textarea,main select{border-radius:12px!important;border:1px solid #b7cce2!important;padding:11px!important;max-width:100%;box-sizing:border-box}
+main textarea{min-height:160px}
+.ri-top{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0 14px}
+.ri-top a,.ri-top button{display:inline-flex;align-items:center;gap:6px;text-decoration:none;color:white;background:#ffffff22;border:1px solid #ffffff66;border-radius:14px;padding:10px 14px;font-size:.92rem;cursor:pointer}
+.ri-stepper{display:flex;gap:7px;margin:0 0 16px;overflow-x:auto;padding-bottom:5px}
+.ri-stepper button{flex:1;min-width:90px;white-space:nowrap;background:#ffffff24!important;color:#fff!important;border:1px solid #ffffff66!important;border-radius:13px!important;padding:10px 7px!important;font-weight:650;cursor:pointer}
+.ri-stepper button.active{background:linear-gradient(130deg,#12b6ff,#0756c7)!important;border-color:#5cddff!important;box-shadow:0 5px 18px #00aeff55}
+.ri-stepper button:disabled{opacity:.5}
+.ri-progress{color:#d6eaff;font-size:.9rem;margin:4px 0 12px}
+.ri-actions{display:flex;justify-content:space-between;gap:10px;margin-top:18px}
+.ri-actions button{flex:1;border-radius:15px!important;border:1px solid #8ec9ff!important;background:linear-gradient(135deg,#139cf0,#063e9b)!important;color:#fff!important;font-weight:700;padding:14px!important}
+.ri-actions button.secondary{background:#e6f0fc!important;color:#153456!important;border-color:#bfd6ef!important}
+body.ri-guided main>section{display:none!important}
+body.ri-guided.ri-stage-0 main>section:nth-of-type(1),body.ri-guided.ri-stage-1 main>section:nth-of-type(2),body.ri-guided.ri-stage-2 main>section:nth-of-type(3),body.ri-guided.ri-stage-3 main>section:nth-of-type(4),body.ri-guided.ri-stage-4 main>section:nth-of-type(5){display:block!important}
+@media(max-width:520px){header h1{font-size:1.9rem!important}.ri-stepper button{font-size:.77rem;min-width:80px}main>section{padding:18px!important}}
+</style><script>
 const $=id=>document.getElementById(id);
 const levels=['Sous-sol','Rez de chaussée','Entresol','1er étage','2e étage','3e étage','4e étage','5e étage','Combles','Grenier','Toiture','Extérieur'];
 let rooms=[], keys=[];
@@ -160,4 +185,27 @@ window.releveAudioError=message=>{
   audioImportRunning=false;$('importaudio').disabled=false;
   $('status').textContent='Audio : '+message;
 };
-</script><script src="../shared/draft.js"></script><script src="../shared/navigation.js"></script></html>
+</script><script src="../shared/draft.js"></script><script src="../shared/navigation.js"></script><script id="ri-v2-guided">
+/* Navigation de présentation uniquement : ne touche pas aux règles métier. */
+(function(){
+const stages=['Dictée','Analyse IA','Pièces','Exports','Étape 2'];
+const main=document.querySelector('main');
+if(!main)return;
+const sections=Array.from(main.children).filter(x=>x.tagName==='SECTION');
+if(sections.length!==5)return;
+const wrapper=document.createElement('div');
+wrapper.innerHTML='<div class="ri-top"><a href="../accueil/index.html">⌂ Accueil</a><button type="button" id="ri-return">← Retour</button></div><div class="ri-stepper" id="ri-steps"></div><div class="ri-progress" id="ri-progress"></div>';
+main.insertBefore(wrapper,sections[0]);
+const actions=document.createElement('div');actions.className='ri-actions';
+actions.innerHTML='<button type="button" class="secondary" id="ri-prev">← Précédent</button><button type="button" id="ri-next">Suivant →</button>';
+main.appendChild(actions);
+let current=0;
+const tabs=document.getElementById('ri-steps');
+stages.forEach((label,i)=>{const b=document.createElement('button');b.type='button';b.textContent=(i+1)+' · '+label;b.addEventListener('click',()=>show(i));tabs.appendChild(b)});
+function show(i){current=Math.max(0,Math.min(stages.length-1,i));document.body.classList.add('ri-guided');for(let j=0;j<stages.length;j++)document.body.classList.toggle('ri-stage-'+j,j===current);Array.from(tabs.children).forEach((b,j)=>b.classList.toggle('active',j===current));document.getElementById('ri-progress').textContent='Étape '+(current+1)+' sur '+stages.length+' — Modifiable à tout moment';document.getElementById('ri-prev').disabled=current===0;document.getElementById('ri-next').textContent=current===stages.length-1?'Retour aux pièces':'Suivant →';window.scrollTo(0,0)}
+document.getElementById('ri-prev').onclick=()=>show(current-1);
+document.getElementById('ri-return').onclick=()=>{if(current===0)location.href='../accueil/index.html';else show(current-1)};
+document.getElementById('ri-next').onclick=()=>show(current===stages.length-1?2:current+1);
+show(0);
+})();
+</script></html>
