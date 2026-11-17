@@ -1,0 +1,330 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relevé Immo — Étape 2</title><style>body{font-family:system-ui;background:#f3f6fa;color:#142338;margin:0;padding:20px}main{max-width:700px;margin:auto}section{background:white;border-radius:16px;padding:18px;margin:14px 0;box-shadow:0 2px 12px #0001}button{border:0;background:#124a85;color:white;border-radius:10px;padding:12px;margin:4px;cursor:pointer}button:disabled{opacity:.45}textarea{width:100%;min-height:140px;box-sizing:border-box;padding:12px;font:inherit}input{font:inherit;padding:8px;width:100%;box-sizing:border-box}.muted{color:#667}.room{border-bottom:1px solid #ddd;padding:10px 0}.room label{display:block;margin:8px 0 3px}.delete-component{display:block;margin:8px auto 4px;background:#c62828;color:white}.delete-component:hover{background:#a91e1e}</style></head><body><main><nav class="topbar"><a class="back-link" href="../etape1/index.html">← Retour</a><span class="step-label">ÉTAPE 2 / 2 · RELEVÉ IMMO</span></nav><div class="step-track"><span class="done"></span><span class="done"></span><span class="active"></span><span></span><span></span></div><h1>🏠 Relevé Immo</h1><p>Étape 2 — Description des composants</p><section><button id="backstep">← Étape 1</button><p id="roomstatus" class="muted"></p><h2>Dictée des composants par pièce</h2><label for="pieceSelect">Pièce à traiter</label><select id="pieceSelect" style="width:100%;padding:12px;margin:8px 0"></select><p id="pieceProgress" class="muted"></p><button id="mic2">🎙️ Démarrer la dictée</button><button id="importaudio" type="button">🎵 Importer un audio (Whisper)</button><button id="stop2" disabled>■ Arrêter</button><textarea id="speech2" placeholder="Dans le salon, les murs A B C D en plâtre peinture…"></textarea><button id="parse2">Analyser les composants avec l’IA</button><button id="validatePiece" type="button">✓ Valider cette pièce</button><button id="nextPiece" type="button">Pièce suivante →</button><p id="parse2status" class="muted"></p></section><section><h2>Composants de la pièce sélectionnée</h2><button id="addcomponent">+ Ajouter un composant</button><div id="components"></div><button id="exportstep2">Exporter Table_General_Desciption_Pieces.xml</button><button id="exporttxt2">Exporter la dictée et les composants (.txt)</button><p id="step2status" class="muted"></p></section></main><link rel="stylesheet" href="../shared/theme.css"><script>
+const $=id=>document.getElementById(id);
+let rooms=[],keys=[],step2Items=[];
+try{const payload=JSON.parse(decodeURIComponent(location.hash.slice(1)));if(!Array.isArray(payload.rooms)||!payload.rooms.length)throw Error('Pièces absentes');rooms=payload.rooms;keys=payload.keys||[];$('roomstatus').textContent=rooms.length+' pièces reçues depuis l’étape 1.';}catch(e){$('roomstatus').textContent='Aucune liste de pièces reçue. Retourne à l’étape 1 et utilise « Passer à l’étape 2 ».';$('parse2').disabled=true;$('exportstep2').disabled=true;}
+$('backstep').onclick=()=>location.href='../etape1/index.html';
+
+// Chaque pièce conserve sa dictée, ses composants et son statut.
+// Les pièces sont identifiées par leur position dans le XML 1, même si leurs noms se répètent.
+const progressKey='releve_immo_etape2_pieces_v1';
+let selectedPiece=0, pieceData=[], speechDraft='';
+function roomLabel(i){const r=rooms[i];return `${i+1}. ${r.name} (${r.floor||'Niveau non indiqué'})`;}
+function roomLocation(i){const r=rooms[i];return (r.floor?r.floor+' - ':'')+r.name;}
+function saveProgress(){
+  if(!rooms.length)return;
+  const payload={signature:JSON.stringify(rooms),selectedPiece,pieces:pieceData};
+  try{localStorage.setItem(progressKey,JSON.stringify(payload));}catch(e){$('step2status').textContent='Sauvegarde locale impossible : '+e.message;}
+}
+function storePiece(){
+  if(!rooms.length||!pieceData[selectedPiece])return;
+  pieceData[selectedPiece].speech=$('speech2').value;
+  pieceData[selectedPiece].items=step2Items;
+  saveProgress();
+}
+function countAll(){return pieceData.reduce((n,p)=>n+p.items.length,0);}
+function refreshProgress(){
+  const done=pieceData.filter(p=>p.validated).length;
+  $('pieceProgress').textContent=`${done} pièce(s) validée(s) sur ${rooms.length} · ${countAll()} composant(s) au total.`;
+  const select=$('pieceSelect');
+  for(let i=0;i<rooms.length;i++){
+    select.options[i].textContent=(pieceData[i].validated?'✓ ':'○ ')+roomLabel(i)+` — ${pieceData[i].items.length} composant(s)`;
+  }
+  $('validatePiece').textContent=pieceData[selectedPiece]?.validated?'✓ Pièce validée — revalider':'✓ Valider cette pièce';
+}
+function showPiece(index){
+  if(index<0||index>=rooms.length||step2Analyzing||audioImportRunning)return;
+  storePiece();
+  selectedPiece=index;
+  const entry=pieceData[index];
+  $('pieceSelect').value=String(index);
+  $('speech2').value=entry.speech;
+  step2Items=entry.items;
+  drawStep2();
+  $('parse2status').textContent=entry.validated?'Pièce validée. Toute modification nécessite une nouvelle validation.':'Pièce en cours : '+roomLabel(index);
+  refreshProgress();
+  saveProgress();
+}
+function markDirty(){
+  if(pieceData[selectedPiece])pieceData[selectedPiece].validated=false;
+  storePiece();
+  refreshProgress();
+}
+function initializePieces(){
+  if(!rooms.length)return;
+  pieceData=rooms.map(()=>({speech:'',items:[],validated:false}));
+  try{
+    const stored=JSON.parse(localStorage.getItem(progressKey)||'null');
+    if(stored&&stored.signature===JSON.stringify(rooms)&&Array.isArray(stored.pieces)&&stored.pieces.length===rooms.length){
+      pieceData=stored.pieces.map(p=>({speech:String(p.speech||''),items:Array.isArray(p.items)?p.items:[],validated:!!p.validated}));
+      selectedPiece=Math.max(0,Math.min(rooms.length-1,Number(stored.selectedPiece)||0));
+    }
+  }catch(e){}
+  const select=$('pieceSelect');select.replaceChildren();
+  rooms.forEach((_,i)=>{const o=document.createElement('option');o.value=String(i);select.append(o);});
+  select.onchange=()=>showPiece(Number(select.value));
+  $('speech2').addEventListener('input',markDirty);
+  $('validatePiece').onclick=()=>{
+    storePiece();
+    if(!pieceData[selectedPiece].items.length&&!confirm('Cette pièce ne contient aucun composant. La valider quand même ?'))return;
+    pieceData[selectedPiece].validated=true;saveProgress();refreshProgress();
+    $('parse2status').textContent='Pièce validée : '+roomLabel(selectedPiece);
+  };
+  $('nextPiece').onclick=()=>showPiece((selectedPiece+1)%rooms.length);
+  const initial=selectedPiece;selectedPiece=initial;step2Items=pieceData[initial].items;
+  $('speech2').value=pieceData[initial].speech;
+  select.value=String(initial);
+  drawStep2();refreshProgress();
+}
+function newKey(i){const d=new Date(),p=[d.getFullYear(),d.getMonth()+1,d.getDate(),d.getHours(),d.getMinutes(),d.getSeconds()].map((x,j)=>String(x).padStart(j?2:4,'0'));return p.join('_')+'_'+String(Math.floor(Math.random()*1e15)).padStart(15,'0')+'_'+i}
+const step2Fields=['id_classement_champs','CelfComposant','Localistion','Informations','Type','CREP_degaradtion','CREP_degaradtion_Details','CREP_mesure','Data_1','Data_2','Data_3','Data_4'];
+function step2Blank(){const r={};for(const k of step2Fields)r[k]='';r.id_classement_champs=String(step2Items.length).padStart(5,'0');r.CelfComposant=newKey(step2Items.length);return r}
+// Normalisation Liciel : jamais « après » pour une époque, ni revêtement fictif.
+function licielInfo(value){
+  let text=String(value??'').trim();
+  text=text.replace(/\b(?:après|apres)\s*(?:l['’]an(?:née)?\s*)?(?=\d{2,4}\b)/gi,'>');
+  text=text.replace(/\b(?:supérieur(?:e)?\s+à|superieur(?:e)?\s+a)\s*(?=\d{2,4}\b)/gi,'>');
+  text=text.replace(/\bRevêtement\s*:\s*(?:non\s+pr[ée]cis[ée]|non\s+renseign[ée]|aucun|n[ée]ant|inconnu)(?=\s*(?:-|$))/gi,'');
+  text=text.replace(/\bSubstrat\s*:\s*(?:non\s+pr[ée]cis[ée]|non\s+renseign[ée])(?=\s*(?:-|$))/gi,'');
+  text=text.replace(/\s+-\s+-\s+/g,' - ').replace(/^\s*-\s*|\s*-\s*$/g,'').trim();
+  return text;
+}
+// Uniformisation des libellés Liciel, sans inventer de repères.
+function normalizeComponentType(value){
+  let t=String(value||'').trim().replace(/\s+/g,' ');
+  t=t.replace(/^(Fenêtre|Volet|Porte(?: d['’]entrée| de placard| de garage)?|Placard|Grille|Poutre)\s*-\s*(\d+)\b/i,'$1 $2');
+  t=t.replace(/^(Fenêtre|Volet|Porte(?: d['’]entrée| de placard| de garage)?|Placard|Grille|Poutre)\s+(\d+)\s+([A-J])$/i,'$1 $2 - $3');
+  t=t.replace(/^Sol\s+\d+$/i,'Sol');
+  t=t.replace(/^Porte\s+d['’]entrée/i,"Porte d'entrée");
+  t=t.replace(/^Porte\s+de\s+placard/i,'Porte de placard');
+  t=t.replace(/^Porte\s+de\s+garage/i,'Porte de garage');
+  t=t.replace(/^Allège\s*(?:de\s+)?mur\s*-?\s*([A-J])$/i,'Mur avec allège - $1');
+  return t;
+}
+// Numérotation par famille et par pièce : jamais de « 1 » pour un élément unique.
+// Les repères de murs (A, B, C...) ne sont pas des numéros de composants.
+function numberedFamily(type){
+  const t=normalizeComponentType(type);
+  const m=t.match(/^(Fenêtre|Volet|Grille|Porte d['’]entrée|Porte de placard|Porte de garage|Porte|Placard|Poutre)\b/i);
+  return m?m[1].toLocaleLowerCase('fr'):null;
+}
+function normalizeRoomNumbering(items){
+  const groups=new Map();
+  for(const r of items){
+    const family=numberedFamily(r.Type);
+    if(!family)continue;
+    if(!groups.has(family))groups.set(family,[]);
+    groups.get(family).push(r);
+  }
+  for(const group of groups.values()){
+    for(let i=0;i<group.length;i++){
+      const r=group[i];
+      const t=normalizeComponentType(r.Type);
+      const match=t.match(/^(Fenêtre|Volet|Grille|Porte d['’]entrée|Porte de placard|Porte de garage|Porte|Placard|Poutre)(?:\s+(\d+))?(?:\s*-\s*([A-J]))?$/i);
+      if(!match)continue;
+      const base=match[1],repere=match[3]?' - '+match[3].toUpperCase():'';
+      // En cas de plusieurs exemplaires, numéroter dans l'ordre de la pièce.
+      r.Type=base+(group.length>1?' '+(i+1):'')+repere;
+    }
+  }
+}
+function normalizeComponentInfo(value){
+  let t=licielInfo(value);
+  t=t.replace(/\b(parqu[ée])\b/gi,'Parquet');
+  // Une date de substrat ne doit jamais être attribuée à la peinture.
+  t=t.replace(/(Revêtement\s*:\s*[^-]+?)\s*-?\s*(>\s*\d{2,4})\b/gi,(full,coat,date)=>{
+    if(!/Substrat\s*:/i.test(t))return full;
+    return coat.trim();
+  });
+  const misplaced=String(value||'').match(/Revêtement\s*:\s*[^-]+?\s*-?\s*(>\s*\d{2,4})\b/i);
+  if(misplaced&&/Substrat\s*:/i.test(t)&&!new RegExp('Substrat\\s*:[^-]*'+misplaced[1].replace(/\s/g,'\\s*')).test(t))
+    t=t.replace(/(Substrat\s*:\s*[^-]+)/i,(m)=>m.trim()+' - '+misplaced[1].replace(/\s/g,''));
+  return t.replace(/\s+-\s+-\s+/g,' - ').trim();
+}
+function referenceRoomsForAI(){
+  return pieceData.map((p,i)=>({name:rooms[i].name,floor:rooms[i].floor,validated:p.validated,
+    components:p.items.map(x=>({type:x.Type,info:x.Informations}))}))
+    .filter((x,i)=>i!==selectedPiece&&x.validated&&x.components.length);
+}
+function referenceContext(raw){
+  // Une référence n'est envoyée que pour une demande explicite de copie/comparaison.
+  const intent=/(?:identique(?:s)?\s+(?:à|au|aux|a|que)|même(?:s)?\s+(?:composants?|choses?|éléments?|description)\s+que|copie(?:r|z)?\s+(?:les?\s+)?composants?\s+(?:de|du|des)|reprend(?:re)?\s+(?:les?\s+)?composants?\s+(?:de|du|des))/i;
+  if(!intent.test(raw))return '';
+  const normalized=s=>String(s).toLocaleLowerCase('fr').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[’]/g,"'");
+  const source=normalized(raw);
+  const refs=referenceRoomsForAI().filter(r=>{
+    const name=normalized(r.name);
+    return name.length>1 && new RegExp('(^|[^a-z0-9])'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?=$|[^a-z0-9])').test(source);
+  });
+  if(!refs.length)return '';
+  return '\n\nPIÈCES SOURCES EXPRESSÉMENT CITÉES (ne copier que si la dictée le demande, appliquer les exceptions) :\n'+JSON.stringify(refs);
+}
+
+function drawStep2(){normalizeRoomNumbering(step2Items);const root=$('components');root.replaceChildren();step2Items.forEach((r,i)=>{const card=document.createElement('div');card.className='room';const title=document.createElement('strong');title.textContent='Composant '+(i+1);card.append(title);for(const [field,label] of [['Localistion','Localisation (niveau - pièce)'],['Type','Type (Sol, Mur - A, Plafond…)'],['Informations','Informations (substrat, revêtement…)']]){const l=document.createElement('label');l.textContent=label;const input=document.createElement('input');input.value=field==='Informations'?normalizeComponentInfo(r[field]):(r[field]||'');input.oninput=()=>{r[field]=field==='Informations'?normalizeComponentInfo(input.value):field==='Type'?normalizeComponentType(input.value):input.value;markDirty();};card.append(l,input)}const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Autres champs Liciel';details.append(summary);for(const field of step2Fields.filter(x=>!['Localistion','Type','Informations'].includes(x))){const l=document.createElement('label');l.textContent=field;const input=document.createElement('input');input.value=r[field]||'';input.oninput=()=>{r[field]=input.value;markDirty();};details.append(l,input)}card.append(details);const del=document.createElement('button');del.textContent='Supprimer ce composant';del.className='delete-component';del.onclick=()=>{step2Items.splice(i,1);markDirty();drawStep2()};card.append(del);root.append(card)})}
+$('addcomponent').onclick=()=>{const item=step2Blank();item.Localistion=roomLocation(selectedPiece);step2Items.push(item);markDirty();drawStep2()};
+
+// Analyse locale conservatrice : une ligne par composant, sans inventer de mesures CREP.
+function norm2(s){return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[’]/g,"'")}
+function componentsFromDictation(raw){
+  const segments=raw.replace(/\s+/g,' ').split(/(?<=[.!?;])\s+|\s*,\s*(?=(?:le |la |les |un |une |dans |au |aux |du |des ))/i).filter(Boolean);
+  const out=[], warnings=[];let place='',floor='';
+  const places=['salon avec cuisine','salon cuisine','salle de bain','salle de jeu','chambre','placard','wc','toilettes','plenum','cave','garage','buanderie','cuisine','salon'];
+  const knownRooms=rooms.map(r=>({name:r.name,floor:r.floor}));
+  function add(type,info){if(!place){warnings.push('Localisation manquante pour '+type);return}const r=step2Blank();r.Localistion=(floor?floor+' - ':'')+place;r.Type=normalizeComponentType(type);r.Informations=normalizeComponentInfo(info);out.push(r)}
+  function infoFor(t){const n=norm2(t);let substrate='',coat='';
+    const substrateMatch=n.match(/(?:substrat\s*:\s*)?(placoplatre|placo|platre|plate|beton|parquet|parque|carrelage|bois|pvc|metal|pierre)/);
+    if(substrateMatch){substrate=({'placo':'placoplâtre','placoplatre':'placoplâtre','plate':'Plâtre','platre':'Plâtre','beton':'Béton','bois':'Bois','metal':'Métal','pierre':'Pierre','parquet':'Parquet','parque':'Parquet','carrelage':'Carrelage','pvc':'PVC'})[substrateMatch[1]]||substrateMatch[1]}
+    const yr=n.match(/(?:superieur a|apres|>\s*)(1949|1940|49|40)/);if(yr&&substrate){substrate+=' >'+(yr[1]==='49'?'1949':yr[1]==='40'?'1940':yr[1]);if(yr[1]==='1940'||yr[1]==='40')warnings.push('Année 1940 à vérifier : '+t.slice(0,65))}
+    if(/peinture/.test(n))coat='Peinture';else if(/revetement\s*:\s*carrelage|carrelage\s+(?:du|sur)\s+mur/.test(n))coat='Carrelage';
+    else if(/carrelage/.test(n)&&substrate!=='Carrelage')coat='Carrelage';
+    if(/parquet|\bparque\b/.test(n)&&substrate!=='Parquet'&&!coat)coat='Parquet';
+    return [substrate?'Substrat : '+substrate:'',coat?'Revêtement : '+coat:''].filter(Boolean).join(' - ')
+  }
+  function letters(text){const n=norm2(text).replace(/\b([a-j])\s*,\s*(?=[a-j]\b)/g,'$1 ');const compact=n.match(/\b([a-j]{2,10})\b/);if(compact)return [...compact[1].toUpperCase()];const m=n.match(/\b(?:murs?|alle?ges?|embrasures?)\s+(?:a|en|de|du|avec|a\s+)?\s*((?:[a-j]\s*[, ]\s*){2,10})\b/);if(m)return [...m[1].matchAll(/[a-j]/g)].map(x=>x[0].toUpperCase());return []}
+  // Découper également aux transitions explicites de composants, sans découper les listes de lettres.
+  const clauses=segments.flatMap(t=>t.split(/\s+(?=(?:les?\s+(?:murs?|plafonds?|plinthes?|plaintes?|fen[eê]tres?|volets?|portes?|sols?|embrasures?|all[eè]ges?|aleges?|grilles?|poutres?)|l['’]?(?:embrasure|all[eè]ge)|la\s+(?:fen[eê]tre|porte|grille|cave)|dans\s+(?:le|la))\b)/i)).filter(Boolean);
+  for(let t of clauses){const n=norm2(t);
+    const at=n.match(/(?:dans\s+(?:le|la|les)|\b(?:le|la)\s+)(salon avec cuisine|salon cuisine|salle de bain|salle de jeu|chambre|placard|wc|toilettes|plenum|cave|garage|buanderie|cuisine|salon)\b/);
+    if(at){place=at[1]==='toilettes'?'WC':at[1]==='plenum'?'Plénum':at[1]==='wc'?'WC':at[1].replace(/^./,c=>c.toUpperCase());const match=knownRooms.find(r=>norm2(r.name)===norm2(place));floor=match?.floor||floor;}
+    if(!place)continue;
+    const info=infoFor(t);
+    const wall=n.match(/\bmurs?\b/);
+    if(wall){const ls=letters(t);if(ls.length){for(const l of [...new Set(ls)])add(/avec\s+all[eè]ge|avec\s+allege/.test(n)?'Mur avec allège - '+l:'Mur - '+l,info)}else if(/\bmur\b/.test(n))add(/avec\s+all[eè]ge|avec\s+allege/.test(n)?'Mur avec allège':'Mur',info);else warnings.push('Murs pluriels sans nombre ni repère : '+t.slice(0,75));continue}
+    const special=n.match(/\b(embrasure|allege|alle?ge)\b/);
+    if(special){const ls=letters(t);const kind=special[1]==='embrasure'?'Embrasure fenêtre':'Allège fenêtre';if(ls.length)for(const l of [...new Set(ls)])add(kind+' - '+l,info);else warnings.push(kind+' : lettre non reconnue');continue}
+    if(/\b(plinthes?|plaintes?)\b/.test(n)){add('Plinthes',info);continue}
+    if(/\bplafond\b/.test(n)){add('Plafond',info);continue}
+    if(/\bsol\b/.test(n)){add('Sol',info);continue}
+    if(/\bpoutres?\b/.test(n)){add(/\bpoutre\b/.test(n)?'Poutre':'Poutres',info);continue}
+    for(let [re,kind] of [[/\bfenetre\b/,'Fenêtre'],[/\bvolet\b/,'Volet'],[/\bgrille\b/,'Grilles'],[/\bporte\b/,'Porte']]){
+      if(re.test(n)){if(kind==='Porte')kind=/porte\s+d['’]entree/.test(n)?"Porte d'entrée":/porte\s+de\s+placard/.test(n)?'Porte de placard':/porte\s+de\s+garage/.test(n)?'Porte de garage':'Porte';const letter=n.match(/\b(?:en|sur|de|fenetre|volet|grille|porte)\s+([a-j])\b/);const nums=[...n.matchAll(/\b(?:fenetre|volet)\s*(\d+)\b/g)].map(x=>x[1]);if(nums.length){for(const no of [...new Set(nums)])add(kind+' '+no+(letter?' - '+letter[1].toUpperCase():''),info)}else add(kind+(letter?' - '+letter[1].toUpperCase():''),info);break}
+    }
+  }
+  return {items:out,warnings};
+}
+
+let step2Analyzing=false;
+function addParsedComponents(result, source){
+  if(!result.items.length){$('parse2status').textContent='Aucun composant reconnu. Vérifie la dictée.';return}
+  result.items.forEach(r=>r.Localistion=roomLocation(selectedPiece));
+  step2Items.push(...result.items);
+  markDirty();
+  step2Items.forEach((r,i)=>r.id_classement_champs=String(i).padStart(5,'0'));
+  drawStep2();
+  $('parse2status').textContent=result.items.length+' composants ajoutés ('+source+'). '+
+    (result.warnings.length?'À vérifier : '+result.warnings.slice(0,8).join(' ; '):'Vérifie chaque ligne avant export.');
+}
+function localFallback(reason){
+  step2Analyzing=false;$('parse2').disabled=false;
+  const result=componentsFromDictation('Dans '+rooms[selectedPiece].name+', '+$('speech2').value.trim());
+  addParsedComponents(result,'analyse locale de secours');
+  if(reason) $('parse2status').textContent+=' IA indisponible : '+reason;
+}
+window.releveStep2Progress=message=>{$('parse2status').textContent=message;};
+window.releveStep2Result=(json,provider)=>{
+  if(!step2Analyzing)return;
+  try{
+    const parsed=JSON.parse(json),components=parsed.components;
+    if(!Array.isArray(components)||!components.length)throw Error('Réponse vide');
+    const out=[],warnings=Array.isArray(parsed.warnings)?parsed.warnings.map(String):[];
+    for(const item of components){
+      if(!item||typeof item.room!=='string'||typeof item.type!=='string'||!item.type.trim())throw Error('Composant invalide');
+      const match=rooms[selectedPiece];
+      const r=step2Blank();
+      r.Localistion=roomLocation(selectedPiece);
+      r.Type=normalizeComponentType(item.type);r.Informations=normalizeComponentInfo(item.info);
+      out.push(r);
+    }
+    step2Analyzing=false;$('parse2').disabled=false;
+    addParsedComponents({items:out,warnings},provider);
+  }catch(e){localFallback('réponse IA invalide : '+e.message);}
+};
+window.releveStep2Error=message=>{if(step2Analyzing)localFallback(message);};
+$('parse2').onclick=()=>{
+  if(step2Analyzing)return;
+  const raw=$('speech2').value.trim();
+  if(!raw){$('parse2status').textContent='Dicte ou saisis les composants.';return}
+  if(!rooms.length){$('parse2status').textContent='Importe ou valide les pièces à l’étape 1.';return}
+  if(window.AndroidAI&&typeof window.AndroidAI.analyzeStep2==='function'){
+    step2Analyzing=true;$('parse2').disabled=true;
+    $('parse2status').textContent='Recherche des IA disponibles…';
+    try{window.AndroidAI.analyzeStep2('Dans '+rooms[selectedPiece].name+', '+raw+referenceContext(raw),JSON.stringify([rooms[selectedPiece]]));}
+    catch(e){localFallback('appel Android impossible');}
+  }else{
+    localFallback('Version Android sans module IA pour l’étape 2');
+  }
+};
+
+
+function encode1252(s){const map={'€':128,'‚':130,'ƒ':131,'„':132,'…':133,'†':134,'‡':135,'ˆ':136,'‰':137,'Š':138,'‹':139,'Œ':140,'Ž':142,'‘':145,'’':146,'“':147,'”':148,'•':149,'–':150,'—':151,'˜':152,'™':153,'š':154,'›':155,'œ':156,'ž':158,'Ÿ':159};const arr=[];for(const c of s){const n=c.codePointAt(0);if(n<=127||(n>=160&&n<=255))arr.push(n);else if(map[c]!==undefined)arr.push(map[c]);else{const ent='&#'+n+';';for(const x of ent)arr.push(x.charCodeAt(0))}}return new Uint8Array(arr)}
+function download(content,name,type,encoding='utf8'){const bytes=encoding==='cp1252'?encode1252(content):new TextEncoder().encode(content);if(window.AndroidFiles&&typeof window.AndroidFiles.save==='function'){let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));window.AndroidFiles.save(name,type,btoa(binary));return}const u=URL.createObjectURL(new Blob([bytes],{type})),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+function xmlEscape(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;')}
+function exportStep2(){storePiece();pieceData.forEach(p=>normalizeRoomNumbering(p.items));const allItems=pieceData.flatMap(p=>p.items);if(!allItems.length){alert('Ajoute au moins un composant.');return}const xml='<LiTable_General_Desciption_Pieces>\r'+allItems.map((r,i)=>'     <LiItem_table_General_Desciption_Pieces>\r'+step2Fields.map(k=>'          <LiColonne_'+k+'>'+xmlEscape(k==='Informations'?normalizeComponentInfo(r[k]):k==='Type'?normalizeComponentType(r[k]):(r[k]||''))+'</LiColonne_'+k+'>').join('\r')+'\r     </LiItem_table_General_Desciption_Pieces>').join('\r')+'\r</LiTable_General_Desciption_Pieces>\r';download(xml,'Table_General_Desciption_Pieces.xml','application/xml','cp1252')}
+$('exportstep2').onclick=exportStep2;
+
+function exportTxtStep2(){
+  storePiece();pieceData.forEach(p=>normalizeRoomNumbering(p.items));const transcript=pieceData.map((p,i)=>'['+roomLabel(i)+']\n'+p.speech).join('\n\n').trim();
+  if(!transcript&&!countAll()){
+    $('step2status').textContent='Aucune dictée ni aucun composant à exporter.';
+    return;
+  }
+  const lines=[
+    'RELEVÉ IMMO — ÉTAPE 2',
+    'Description des composants',
+    '',
+    'DICTÉE ORIGINALE',
+    '----------------',
+    transcript||'(Aucune dictée saisie)',
+    '',
+    'COMPOSANTS RECONNUS / CORRIGÉS',
+    '------------------------------'
+  ];
+  if(!countAll())lines.push('(Aucun composant analysé)');
+  pieceData.flatMap(p=>p.items).forEach((r,i)=>{
+    lines.push('', 'Composant '+(i+1),
+      'Localisation : '+(r.Localistion||''),
+      'Type : '+(r.Type||''),
+      'Informations : '+normalizeComponentInfo(r.Informations));
+    for(const key of step2Fields.filter(k=>!['Localistion','Type','Informations'].includes(k))){
+      if(r[key])lines.push(key+' : '+r[key]);
+    }
+  });
+  download(lines.join('\r\n')+'\r\n','ReleveImmo_Etape2_Dictee_et_Composants.txt','text/plain; charset=utf-8');
+  $('step2status').textContent='Export TXT demandé : choisis où enregistrer le fichier.';
+}
+$('exporttxt2').onclick=exportTxtStep2;
+
+
+let active=false,rec;const Speech=window.SpeechRecognition||window.webkitSpeechRecognition;
+window.releveNativeSpeechResult=(text,status)=>{if(text){$('speech2').value+=text+' ';markDirty();}$('parse2status').textContent=status||'Dictée en cours';};
+window.releveNativeSpeechPartial=()=>{};
+window.releveNativeSpeechState=(on,status)=>{active=!!on;$('mic2').disabled=!!on;$('stop2').disabled=!on;$('parse2status').textContent=status||'';};
+if(window.AndroidSpeech?.start){$('mic2').onclick=()=>window.AndroidSpeech.start();$('stop2').onclick=()=>window.AndroidSpeech.stop();}
+else if(Speech){$('mic2').onclick=()=>{active=true;window.releveNativeSpeechState(true,'Écoute en cours…');function begin(){if(!active)return;rec=new Speech();rec.lang='fr-FR';rec.continuous=true;rec.interimResults=false;rec.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)window.releveNativeSpeechResult(e.results[i][0].transcript)};rec.onend=()=>{if(active)setTimeout(begin,300)};rec.start()}begin()};$('stop2').onclick=()=>{active=false;rec?.stop();window.releveNativeSpeechState(false,'Dictée arrêtée')}}else{$('mic2').disabled=true;$('parse2status').textContent='Dictée vocale indisponible. Saisie manuelle possible.'}
+
+// Transcription audio en ligne indépendante de la dictée Android existante.
+let audioImportRunning=false;
+initializePieces();
+$('importaudio').onclick=()=>{
+  if(audioImportRunning)return;
+  if(!window.AndroidAI || typeof window.AndroidAI.importAudio!=='function'){
+    $('parse2status').textContent='Import audio disponible uniquement dans la nouvelle APK Android.';return;
+  }
+  audioImportRunning=true;$('importaudio').disabled=true;
+  $('parse2status').textContent='Choisis un fichier MP3, M4A ou WAV.';
+  try{window.AndroidAI.importAudio();}catch(e){window.releveAudioError('Impossible de sélectionner le fichier.');}
+};
+window.releveAudioProgress=message=>{
+  $('parse2status').textContent=message;
+  if(/annulée/i.test(message)){audioImportRunning=false;$('importaudio').disabled=false;}
+};
+window.releveAudioResult=text=>{
+  audioImportRunning=false;$('importaudio').disabled=false;
+  const field=$('speech2');
+  field.value+=(field.value.trim()?'\n':'')+text;markDirty();
+  $('parse2status').textContent='Transcription terminée. Vérifie le texte puis lance l’analyse habituelle.';
+};
+window.releveAudioError=message=>{
+  audioImportRunning=false;$('importaudio').disabled=false;
+  $('parse2status').textContent='Audio : '+message;
+};
+</script></body></html>
