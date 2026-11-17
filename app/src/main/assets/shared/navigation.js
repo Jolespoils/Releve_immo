@@ -16,7 +16,7 @@
     if (!route) return;
     let attempts = 0;
     const waitForGuided = () => {
-      const tabs = document.querySelectorAll('#ri-steps button');
+      const tabs = document.querySelectorAll('#ri-stepper button');
       if (tabs.length < 4 && attempts++ < 25) {
         setTimeout(waitForGuided, 40);
         return;
