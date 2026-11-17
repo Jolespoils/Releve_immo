@@ -17,11 +17,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Copier HTML
-        run: |
-          mkdir -p app/src/main/assets/etape1 app/src/main/assets/etape2
-          cp etape1/index.html app/src/main/assets/etape1/index.html
-          cp etape2/index.html app/src/main/assets/etape2/index.html
+      # Les pages HTML sont déjà dans app/src/main/assets.
+      # Ne jamais les écraser avec les anciennes copies à la racine.
       - name: Compiler APK
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
